@@ -25,6 +25,7 @@ import (
 // Handlers 所有Handler的集合
 type Handlers struct {
 	Auth          *handler.AuthHandler
+	Credential    *handler.CredentialHandler
 	Property      *handler.PropertyHandler
 	TextMessage   *handler.TextMessageHandler
 	Serial        *handler.SerialHandler
@@ -99,12 +100,21 @@ func setup(app *orz.App) error {
 	)
 	deviceManager.SetScheduledTaskStatusUpdater(schedulerService.UpdateLastRunStatusByMsgId)
 
-	// 8. 初始化 OIDC 和 Account Service
+	// 8. 初始化口令服务（数据库存储，config.yaml 的 Users 仅作首次种子）
+	credentialService, err := service.NewCredentialService(logger, db, appConfig.Users)
+	if err != nil {
+		logger.Error("初始化口令服务失败", zap.Error(err))
+		return err
+	}
+
+	// 9. 初始化 OIDC 和 Account Service
 	oidcService := service.NewOIDCService(logger, &appConfig)
 	accountService := service.NewAccountService(logger, oidcService, &appConfig)
+	accountService.SetCredentialService(credentialService)
 
-	// 9. 初始化 Handler
+	// 10. 初始化 Handler
 	authHandler := handler.NewAuthHandler(logger, accountService)
+	credentialHandler := handler.NewCredentialHandler(logger, accountService)
 	propertyHandler := handler.NewPropertyHandler(logger, propertyService, notifier)
 	textMessageHandler := handler.NewTextMessageHandler(logger, textMessageService, textMessageRepo)
 	serialHandler := handler.NewSerialHandler(logger, deviceManager) // 改为传入 deviceManager
@@ -112,6 +122,7 @@ func setup(app *orz.App) error {
 
 	handlers := &Handlers{
 		Auth:          authHandler,
+		Credential:    credentialHandler,
 		Property:      propertyHandler,
 		TextMessage:   textMessageHandler,
 		Serial:        serialHandler,
@@ -160,6 +171,7 @@ func autoMigrate(db *gorm.DB) error {
 		&models.Property{},
 		&models.TextMessage{},
 		&models.ScheduledTask{},
+		&models.UserCredential{},
 	)
 }
 
@@ -194,6 +206,10 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 	// API 路由组（需要认证）
 	api := e.Group("/api")
 	api.Use(middleware.JWTMiddleware(appConfig.JWT.Secret, logger))
+
+	// 当前用户 / 修改密码
+	api.GET("/auth/me", handlers.Credential.Me)
+	api.POST("/auth/password", handlers.Credential.ChangePassword)
 
 	// Version
 	api.GET("/version", func(c echo.Context) error {
