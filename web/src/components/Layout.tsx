@@ -1,5 +1,5 @@
 import {Link, Outlet, useLocation, useNavigate} from 'react-router-dom';
-import {Bell, Clock, KeyRound, LayoutDashboard, LogOut, MessageSquare, ShieldCheck, Smartphone} from 'lucide-react';
+import {Bell, Clock, KeyRound, LayoutDashboard, LogOut, MessageSquare, ShieldCheck, Smartphone, Webhook} from 'lucide-react';
 import {Button} from "@/components/ui/button.tsx";
 import {useQuery} from "@tanstack/react-query";
 import {getVersion} from "@/api/property.ts";
@@ -18,6 +18,7 @@ export default function Layout() {
         {name: '串口控制', href: '/serial', icon: Smartphone},
         {name: '通知渠道', href: '/notifications', icon: Bell},
         {name: '计划任务', href: '/scheduled-tasks', icon: Clock},
+        {name: '开放接口', href: '/openapi', icon: Webhook},
     ];
 
     // 获取版本信息

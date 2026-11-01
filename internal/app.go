@@ -26,6 +26,8 @@ import (
 type Handlers struct {
 	Auth          *handler.AuthHandler
 	Credential    *handler.CredentialHandler
+	OpenAPI       *handler.OpenAPIHandler
+	OpenAPIAdmin  *handler.OpenAPIAdminHandler
 	Property      *handler.PropertyHandler
 	TextMessage   *handler.TextMessageHandler
 	Serial        *handler.SerialHandler
@@ -115,6 +117,17 @@ func setup(app *orz.App) error {
 	// 10. 初始化 Handler
 	authHandler := handler.NewAuthHandler(logger, accountService)
 	credentialHandler := handler.NewCredentialHandler(logger, accountService)
+
+	// 11. 开放接口（AK/SK 签名）
+	apiKeyService, err := service.NewAPIKeyService(logger, db, appConfig.JWT.Secret)
+	if err != nil {
+		logger.Error("初始化开放接口鉴权失败", zap.Error(err))
+		return err
+	}
+	templateService := service.NewTemplateService(logger, db)
+	openAPIService := service.NewOpenAPIService(logger, db, deviceManager, templateService)
+	openAPIHandler := handler.NewOpenAPIHandler(logger, apiKeyService, openAPIService, templateService)
+	openAPIAdminHandler := handler.NewOpenAPIAdminHandler(logger, apiKeyService, templateService, openAPIService)
 	propertyHandler := handler.NewPropertyHandler(logger, propertyService, notifier)
 	textMessageHandler := handler.NewTextMessageHandler(logger, textMessageService, textMessageRepo)
 	serialHandler := handler.NewSerialHandler(logger, deviceManager) // 改为传入 deviceManager
@@ -123,6 +136,8 @@ func setup(app *orz.App) error {
 	handlers := &Handlers{
 		Auth:          authHandler,
 		Credential:    credentialHandler,
+		OpenAPI:       openAPIHandler,
+		OpenAPIAdmin:  openAPIAdminHandler,
 		Property:      propertyHandler,
 		TextMessage:   textMessageHandler,
 		Serial:        serialHandler,
@@ -172,6 +187,9 @@ func autoMigrate(db *gorm.DB) error {
 		&models.TextMessage{},
 		&models.ScheduledTask{},
 		&models.UserCredential{},
+		&models.APIKey{},
+		&models.SMSTemplate{},
+		&models.APISendLog{},
 	)
 }
 
@@ -183,6 +201,9 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 		Skipper: func(c echo.Context) bool {
 			// 不处理接口
 			if strings.HasPrefix(c.Request().RequestURI, "/api") {
+				return true
+			}
+			if strings.HasPrefix(c.Request().RequestURI, "/openapi") {
 				return true
 			}
 			if strings.HasPrefix(c.Request().RequestURI, "/health") {
@@ -203,6 +224,11 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 	e.GET("/api/auth/oidc/url", handlers.Auth.GetOIDCAuthURL)
 	e.POST("/api/auth/oidc/callback", handlers.Auth.OIDCCallback)
 
+	// ===== 对外开放接口（AK/SK 签名认证，不走 JWT）=====
+	openapi := e.Group("/openapi")
+	openapi.POST("/v1/sms/send", handlers.OpenAPI.Send)
+	openapi.GET("/v1/templates", handlers.OpenAPI.ListTemplates)
+
 	// API 路由组（需要认证）
 	api := e.Group("/api")
 	api.Use(middleware.JWTMiddleware(appConfig.JWT.Secret, logger))
@@ -210,6 +236,20 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 	// 当前用户 / 修改密码
 	api.GET("/auth/me", handlers.Credential.Me)
 	api.POST("/auth/password", handlers.Credential.ChangePassword)
+
+	// 开放接口管理（Key / 模板 / 调用日志）
+	api.GET("/openapi/keys", handlers.OpenAPIAdmin.ListKeys)
+	api.POST("/openapi/keys", handlers.OpenAPIAdmin.CreateKey)
+	api.PUT("/openapi/keys/:id", handlers.OpenAPIAdmin.UpdateKey)
+	api.DELETE("/openapi/keys/:id", handlers.OpenAPIAdmin.DeleteKey)
+	api.POST("/openapi/keys/:id/reset-secret", handlers.OpenAPIAdmin.ResetSecret)
+
+	api.GET("/openapi/templates", handlers.OpenAPIAdmin.ListTemplates)
+	api.POST("/openapi/templates", handlers.OpenAPIAdmin.CreateTemplate)
+	api.PUT("/openapi/templates/:id", handlers.OpenAPIAdmin.UpdateTemplate)
+	api.DELETE("/openapi/templates/:id", handlers.OpenAPIAdmin.DeleteTemplate)
+
+	api.GET("/openapi/logs", handlers.OpenAPIAdmin.ListSendLogs)
 
 	// Version
 	api.GET("/version", func(c echo.Context) error {
