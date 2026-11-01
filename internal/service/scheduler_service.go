@@ -1,0 +1,267 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/dushixiang/uart_sms_forwarder/internal/models"
+	"github.com/dushixiang/uart_sms_forwarder/internal/repo"
+	"github.com/go-orz/orz"
+
+	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+)
+
+// SchedulerService 定时任务调度服务（支持多设备）
+type SchedulerService struct {
+	logger        *zap.Logger
+	cron          *cron.Cron
+	repo          *repo.ScheduledTaskRepo
+	deviceManager *DeviceManager // 改为使用 DeviceManager
+}
+
+// NewSchedulerService 创建定时任务服务实例
+func NewSchedulerService(
+	logger *zap.Logger,
+	db *gorm.DB,
+	deviceManager *DeviceManager,
+) *SchedulerService {
+	return &SchedulerService{
+		logger:        logger,
+		repo:          repo.NewScheduledTaskRepo(db),
+		deviceManager: deviceManager,
+	}
+}
+
+// ==================== 任务管理方法 ====================
+
+// GetAll 获取所有定时任务
+func (s *SchedulerService) GetAll(ctx context.Context) ([]models.ScheduledTask, error) {
+	return s.repo.FindAll(ctx)
+}
+
+// GetAllEnabled 获取所有启用的定时任务
+func (s *SchedulerService) GetAllEnabled(ctx context.Context) ([]models.ScheduledTask, error) {
+	return s.repo.FindAllEnabled(ctx)
+}
+
+// GetById 根据ID获取定时任务
+func (s *SchedulerService) GetById(ctx context.Context, id string) (*models.ScheduledTask, error) {
+	task, err := s.repo.FindById(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+// Create 创建定时任务
+func (s *SchedulerService) Create(ctx context.Context, task *models.ScheduledTask) error {
+	now := time.Now().UnixMilli()
+	task.ID = uuid.New().String()
+	task.CreatedAt = now
+	task.UpdatedAt = now
+	return s.repo.Create(ctx, task)
+}
+
+// Update 更新定时任务
+func (s *SchedulerService) Update(ctx context.Context, task *models.ScheduledTask) error {
+	existingTask, err := s.GetById(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	existingTask.Name = task.Name
+	existingTask.Enabled = task.Enabled
+	existingTask.IntervalDays = task.IntervalDays
+	existingTask.PhoneNumber = task.PhoneNumber
+	existingTask.Content = task.Content
+	// 新增：设备ID
+	if task.DeviceID != "" {
+		existingTask.DeviceID = task.DeviceID
+	}
+
+	return s.repo.Save(ctx, existingTask)
+}
+
+// Delete 删除定时任务
+func (s *SchedulerService) Delete(ctx context.Context, id string) error {
+	return s.repo.DeleteById(ctx, id)
+}
+
+// TriggerTask 立即触发执行指定的任务
+func (s *SchedulerService) TriggerTask(ctx context.Context, id string) error {
+	// 获取任务
+	task, err := s.GetById(ctx, id)
+	if err != nil {
+		return fmt.Errorf("获取任务失败: %w", err)
+	}
+
+	// 执行任务
+	if err := s.executeTask(*task); err != nil {
+		return fmt.Errorf("执行任务失败: %w", err)
+	}
+
+	return nil
+}
+
+// ==================== 调度相关方法 ====================
+
+// Start 启动定时任务服务
+func (s *SchedulerService) Start(ctx context.Context) error {
+	s.cron = cron.New()
+
+	// 添加每天执行一次的检查任务（每天早上8点执行）
+	_, err := s.cron.AddFunc("0 8 * * *", func() {
+		s.logger.Info("开始检查定时任务")
+		if err := s.checkAndExecuteTasks(); err != nil {
+			s.logger.Error("检查并执行定时任务失败", zap.Error(err))
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("添加检查任务失败: %w", err)
+	}
+
+	// 启动 cron
+	s.cron.Start()
+
+	s.logger.Info("定时任务服务启动成功")
+	return nil
+}
+
+// checkAndExecuteTasks 检查并执行满足条件的任务
+func (s *SchedulerService) checkAndExecuteTasks() error {
+	ctx := context.Background()
+
+	// 获取所有启用的任务
+	tasks, err := s.GetAllEnabled(ctx)
+	if err != nil {
+		s.logger.Error("获取启用的定时任务失败", zap.Error(err))
+		return err
+	}
+
+	now := time.Now()
+	for _, task := range tasks {
+		// 检查是否需要执行
+		if s.shouldExecuteTask(task, now) {
+			s.logger.Info("任务满足执行条件",
+				zap.String("id", task.ID),
+				zap.String("name", task.Name),
+				zap.Int("intervalDays", task.IntervalDays),
+				zap.String("device_id", task.DeviceID))
+
+			if err := s.executeTask(task); err != nil {
+				s.logger.Error("执行定时任务失败",
+					zap.String("id", task.ID),
+					zap.String("name", task.Name),
+					zap.Error(err))
+			}
+		}
+	}
+
+	return nil
+}
+
+// shouldExecuteTask 判断任务是否应该执行
+func (s *SchedulerService) shouldExecuteTask(task models.ScheduledTask, now time.Time) bool {
+	// 如果从未执行过，则执行
+	if task.LastRunAt <= 0 {
+		return true
+	}
+
+	// 计算距离上次执行的天数
+	lastRun := time.UnixMilli(task.LastRunAt)
+	daysSinceLastRun := int(now.Sub(lastRun).Hours() / 24)
+
+	// 如果上次执行失败，1天后就可以重试
+	if task.LastRunStatus == models.LastRunStatusFailed {
+		return daysSinceLastRun >= 1
+	}
+
+	// 如果满足间隔天数条件，则执行
+	return daysSinceLastRun >= task.IntervalDays
+}
+
+// executeTask 执行任务（使用指定设备）
+func (s *SchedulerService) executeTask(task models.ScheduledTask) error {
+	s.logger.Info("执行定时任务",
+		zap.String("id", task.ID),
+		zap.String("name", task.Name),
+		zap.String("phone", task.PhoneNumber),
+		zap.String("content", task.Content),
+		zap.String("device_id", task.DeviceID))
+
+	ctx := context.Background()
+
+	// 获取指定设备（如果没有指定，使用第一个启用的设备）
+	deviceID := task.DeviceID
+	if deviceID == "" {
+		deviceID, _ = s.deviceManager.GetFirstEnabledDeviceID()
+	}
+
+	device, ok := s.deviceManager.GetDevice(deviceID)
+	if !ok {
+		return fmt.Errorf("设备不存在: %s", deviceID)
+	}
+
+	flyMode := device.FlyMode()
+	// 如果是飞行模式，取消飞行模式，再等待 30 秒后发送短信
+	if flyMode {
+		s.logger.Info("当前为飞行模式，取消飞行模式后等待 30 秒", zap.String("device_id", deviceID))
+		// 取消飞行模式
+		if err := s.deviceManager.SetFlymode(deviceID, false); err != nil {
+			s.logger.Error("取消飞行模式失败", zap.Error(err))
+			return err
+		}
+		s.logger.Info("取消飞行模式成功")
+		// 等待 30 秒
+		time.Sleep(30 * time.Second)
+		s.logger.Info("等待 30 秒后发送短信...")
+	}
+
+	// 发送短信（使用指定设备）
+	msgId, err := s.deviceManager.SendSMS(deviceID, task.PhoneNumber, task.Content)
+	if err != nil {
+		s.logger.Error("定时任务发送短信失败",
+			zap.String("id", task.ID),
+			zap.String("name", task.Name),
+			zap.String("device_id", deviceID),
+			zap.Error(err))
+		_ = s.UpdateLastRun(ctx, task.ID, msgId, models.LastRunStatusFailed)
+		return err
+	}
+	s.logger.Info("定时任务执行成功",
+		zap.String("id", task.ID),
+		zap.String("name", task.Name),
+		zap.String("device_id", deviceID))
+
+	// 更新任务的 LastRunAt 字段到数据库
+	_ = s.UpdateLastRun(ctx, task.ID, msgId, models.LastRunStatusSuccess)
+
+	// 如果是飞行模式，重新设置飞行模式
+	if flyMode {
+		s.logger.Info("等待 30 秒后重新设置飞行模式...")
+		time.Sleep(30 * time.Second)
+		s.logger.Info("重新设置飞行模式", zap.String("device_id", deviceID))
+		if err := s.deviceManager.SetFlymode(deviceID, true); err != nil {
+			s.logger.Error("设置飞行模式失败", zap.Error(err))
+			return err
+		}
+		s.logger.Info("设置飞行模式成功")
+	}
+
+	return nil
+}
+
+func (s *SchedulerService) UpdateLastRun(ctx context.Context, id, msgId string, status models.LastRunStatus) error {
+	return s.repo.UpdateColumnsById(ctx, id, orz.Map{
+		"last_msg_id":     msgId,
+		"last_run_at":     time.Now().UnixMilli(),
+		"last_run_status": status,
+	})
+}
+
+func (s *SchedulerService) UpdateLastRunStatusByMsgId(ctx context.Context, msgId string, status models.LastRunStatus) error {
+	return s.repo.UpdateLastRunStatusByMsgId(ctx, msgId, status)
+}

@@ -1,0 +1,19 @@
+# Dockerfile for uart_sms_forwarder-multi
+# 使用预构建的二进制文件
+
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates tzdata wget || true
+
+WORKDIR /app
+
+# 复制预构建的二进制文件
+COPY uart_sms_forwarder .
+COPY config.example.yaml ./config.example.yaml
+
+RUN mkdir -p /app/data /app/logs
+RUN chmod +x ./uart_sms_forwarder
+
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:8080/health || exit 1
+
+CMD ["./uart_sms_forwarder"]

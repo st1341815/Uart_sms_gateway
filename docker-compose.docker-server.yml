@@ -1,0 +1,54 @@
+version: 3.8
+services:
+  newsms:
+    container_name: NewSMS
+    image: uart_sms_forwarder-multi:v12
+    restart: unless-stopped
+    expose:
+      - "8080"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml:ro
+    devices:
+      - /dev/ttyACM8:/dev/ttyACM8
+      - /dev/ttyACM2:/dev/ttyACM2
+      - /dev/ttyACM5:/dev/ttyACM5
+
+  nginx:
+    container_name: NewSMS_nginx
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - newsms
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+  exporter:
+    container_name: NewSMS_exporter
+    build:
+      context: ./exporter
+    restart: unless-stopped
+    volumes:
+      - ./data:/data:ro
+    environment:
+      DB_PATH: /data/app.db
+    expose:
+      - "5000"
+
+  api_patch:
+    container_name: NewSMS_api_patch
+    build:
+      context: ./api_patch
+    restart: unless-stopped
+    environment:
+      BACKEND: http://newsms:8080
+      CONFIG_PATH: /config/config.yaml
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    expose:
+      - "5000"

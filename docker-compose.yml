@@ -1,0 +1,26 @@
+version: 3.8
+
+services:
+  # NewSMS - 多设备短信转发器
+  newsms:
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+    image: uart_sms_forwarder-multi:latest
+    container_name: NewSMS
+    privileged: true
+    devices:
+      # Stable device symlinks from udev rules (/etc/udev/rules.d/99-newsms-symlinks.rules)
+      - /dev/newsms_cmcc:/dev/newsms_cmcc
+      - /dev/newsms_o2:/dev/newsms_o2
+      - /dev/newsms_cu:/dev/newsms_cu
+    ports:
+      - "8080:8080"  # 统一端口
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    labels:
+      - "sms.type=multi-device"
+      - "sms.devices=3"
