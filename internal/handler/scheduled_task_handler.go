@@ -178,8 +178,12 @@ func (h *ScheduledTaskHandler) validateTask(task *models.ScheduledTask) error {
 	if task.Content == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "短信内容不能为空")
 	}
-	// 设备校验：DeviceID 留空 = 使用默认设备（按配置声明顺序取第一个），
-	// 但填了就必须真实存在，否则要等到每天 8 点执行时才报「设备不存在」。
+	// 设备必填且必须真实存在：多卡场景下不允许「默认设备」，
+	// 否则短信可能从非预期号码（如境外漫游卡）发出。
+	if task.DeviceID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("必须指定发送设备（可选: %v）", h.schedulerService.DeviceIDs()))
+	}
 	if !h.schedulerService.HasDevice(task.DeviceID) {
 		return echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("设备不存在: %s（可选: %v）", task.DeviceID, h.schedulerService.DeviceIDs()))

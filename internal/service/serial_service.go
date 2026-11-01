@@ -1,13 +1,11 @@
 package service
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -234,7 +232,11 @@ func (s *SerialService) runOnce(resetBackoff func()) error {
 	// 连接已断开，更新状态
 	s.setConnected(false)
 
-	return nil
+	// ⚠️ 这里必须返回 error，不能返回 nil。
+	// Start() 的循环是 `for { err := runOnce(); if err != nil { sleep(backoff) } }`，
+	// 返回 nil 会导致不 sleep 立即重连 —— 串口反复打开/关闭高速空转，
+	// 既刷爆日志又可能让设备来不及重新枚举。
+	return fmt.Errorf("串口连接已断开: %s", selectedPort)
 }
 
 // connectSerial 连接串口
@@ -331,7 +333,10 @@ func (s *SerialService) listenSerialData(connCtx context.Context, connCancel con
 	if port == nil {
 		return
 	}
-	reader := bufio.NewReader(port)
+
+	// 按 SMS_START:/SMS_END 边界扫描，而不是按行切分：
+	// 短信正文可含换行，按行切会让帧错位且永不自愈。
+	reader := NewFrameReader(port)
 
 	for {
 		select {
@@ -339,26 +344,28 @@ func (s *SerialService) listenSerialData(connCtx context.Context, connCancel con
 			s.logger.Info("串口监听停止")
 			return
 		default:
-			line, err := reader.ReadString('\n')
+			frame, err := reader.ReadFrame()
 			if err != nil {
-				if err == io.EOF {
-					// EOF 可能表示设备断开
+				if errors.Is(err, io.EOF) {
 					s.logger.Warn("串口读取 EOF，设备可能已断开",
 						zap.String("device_id", s.deviceID))
 					return
 				}
-				// 检查 context 是否已取消
+				if errors.Is(err, ErrFrameTooLarge) {
+					s.logger.Error("串口帧超长，判定数据流异常，触发重连",
+						zap.String("device_id", s.deviceID))
+					return
+				}
 				if connCtx.Err() != nil {
 					return
 				}
-				// 其他错误，可能是设备断开或硬件错误
 				s.logger.Error("读取串口数据错误，退出监听",
 					zap.String("device_id", s.deviceID),
 					zap.Error(err))
 				return
 			}
 
-			s.processReceivedData(strings.TrimSpace(line))
+			s.processReceivedData(frame)
 		}
 	}
 }
@@ -397,13 +404,13 @@ func (s *SerialService) RequestCacheUpdate() {
 }
 
 // processReceivedData 处理接收到的数据
-func (s *SerialService) processReceivedData(data string) {
+func (s *SerialService) processReceivedData(data []byte) {
 	// 只记录长度，不打印原文：原始帧含 IMSI/ICCID/短信正文，
 	// 且每 10 秒每设备都会收到状态帧，全量打印会把日志刷到百万行。
 	s.logger.Debug("收到串口数据",
 		zap.String("device_id", s.deviceID),
 		zap.Int("bytes", len(data)))
-	msg, err := parseSMSFrame(data)
+	msg, err := parseSMSFrame(string(data))
 	if err != nil {
 		if errors.Is(err, errNotSMSFrame) {
 			return

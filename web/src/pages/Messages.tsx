@@ -12,7 +12,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
-import type {Conversation, TextMessage} from '@/api/types';
+import type {Conversation, SendSMSRequest, TextMessage} from '@/api/types';
 
 export default function Messages() {
     const queryClient = useQueryClient();
@@ -22,6 +22,8 @@ export default function Messages() {
     const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
     // 输入框内容
     const [inputText, setInputText] = useState('');
+    // 发送设备（必选）：多卡场景下不能默认，避免从非预期号码发出
+    const [sendDeviceId, setSendDeviceId] = useState<string>('');
     // 搜索关键词
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -70,7 +72,7 @@ export default function Messages() {
 
     // 发送短信 Mutation
     const sendSMSMutation = useMutation({
-        mutationFn: (data: { to: string; content: string }) => sendSMS(data),
+        mutationFn: (data: SendSMSRequest) => sendSMS(data),
         onSuccess: () => {
             setInputText('');
             // 刷新会话列表和当前会话消息
@@ -156,7 +158,12 @@ export default function Messages() {
             toast.warning('请输入短信内容');
             return;
         }
-        sendSMSMutation.mutate({to: selectedPeer, content: inputText});
+        // 设备必选：短信必须明确从哪张卡发出
+        if (!sendDeviceId) {
+            toast.warning('请先选择发送设备');
+            return;
+        }
+        sendSMSMutation.mutate({to: selectedPeer, content: inputText, device_id: sendDeviceId});
     };
 
     const handleClear = () => {
@@ -440,6 +447,24 @@ export default function Messages() {
                     {/* 输入框 */}
                     <div className="p-4 bg-white border-t border-gray-200">
                         <form className="flex gap-3" onSubmit={handleSendSMS}>
+                            <select
+                                value={sendDeviceId}
+                                onChange={(e) => setSendDeviceId(e.target.value)}
+                                disabled={sendSMSMutation.isPending}
+                                title="选择从哪张卡发送"
+                                className={`h-10 rounded-lg border px-2 text-sm outline-none transition-colors ${
+                                    sendDeviceId
+                                        ? 'bg-gray-50 border-gray-200 focus:border-blue-500'
+                                        : 'bg-amber-50 border-amber-300 text-amber-700'
+                                }`}
+                            >
+                                <option value="">选择设备</option>
+                                {devices.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.name || d.id}
+                                    </option>
+                                ))}
+                            </select>
                             <Input
                                 type="text"
                                 value={inputText}
@@ -450,7 +475,7 @@ export default function Messages() {
                             />
                             <Button
                                 type="submit"
-                                disabled={!selectedPeer || !inputText.trim() || sendSMSMutation.isPending}
+                                disabled={!selectedPeer || !inputText.trim() || !sendDeviceId || sendSMSMutation.isPending}
                                 className="h-10 px-6 bg-blue-600 hover:bg-blue-700 shadow-sm"
                             >
                                 {sendSMSMutation.isPending ? (

@@ -8,6 +8,7 @@ import {Textarea} from '@/components/ui/textarea';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {DeviceSelector} from '@/components/DeviceSelector';
+import type {SendSMSRequest} from '../api/types';
 import type {DeviceStatusSummary, DeviceStatus} from '@/api/types';
 import {formatUptime} from "@/utils/utils.ts";
 
@@ -54,10 +55,9 @@ export default function SerialControl() {
 
     // 发送短信 Mutation（支持指定设备）
     const sendSMSMutation = useMutation({
-        mutationFn: (data: { to: string; content: string; device_id?: string }) => 
-            serialApi.sendSMS(data),
+        mutationFn: (data: SendSMSRequest) => serialApi.sendSMS(data),
         onSuccess: () => {
-            toast.success(`短信下发成功（${selectedDevice?.name || '默认设备'}），等待确认...`);
+            toast.success(`短信下发成功（${selectedDevice?.name || selectedDeviceId}），等待确认...`);
             setTo('');
             setContent('');
         },
@@ -71,7 +71,7 @@ export default function SerialControl() {
     const setFlymodeMutation = useMutation({
         mutationFn: (enabled: boolean) => serialApi.setFlymode(enabled, selectedDeviceId),
         onSuccess: () => {
-            toast.success(`设置成功（${selectedDevice?.name || '默认设备'}）`);
+            toast.success(`设置成功（${selectedDevice?.name || selectedDeviceId}）`);
             refetchDetail();
         },
         onError: (error) => {

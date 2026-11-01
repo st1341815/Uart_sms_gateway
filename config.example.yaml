@@ -28,23 +28,28 @@ App:
     RedirectURL: "http://localhost:8080/oidc/callback"
 
   # 串口配置（多设备支持）
+  #
+  # ⚠️ Port 强烈建议使用 /dev/serial/by-path/... 而不是 /dev/ttyACM*：
+  #    多个 AirM2M 模块的 ID_SERIAL 相同（by-id 不可用），
+  #    ttyACM 编号会随插拔/枚举顺序变化，导致「哪张卡是哪张」错乱。
+  #    查看实际映射：ls -l /dev/serial/by-path/
+  #    容器内解析 by-path 需要挂载：volumes: - /dev/serial:/dev/serial:ro
+  #
+  # 本机（192.168.11.21）当前为 2 张卡，设备 ID 与线上 config.yaml 保持一致：
+  #    sms1 = 中国联通 15105513113  → ttyACM2
+  #    sms2 = O2 UK 漫游卡          → ttyACM5
   Serial:
     Devices:
       - ID: "sms1"
-        Name: "移动1111"
-        Port: "/dev/ttyACM8"   # 或 /dev/newsms_cmcc
-        Description: "中国移动 180xxxx1111"
+        Name: "联通3113"
+        Port: "/dev/serial/by-path/pci-0000:07:1b.0-usb-0:2:1.6"
+        Description: "中国联通 +8615105513113"
         Enabled: true
       - ID: "sms2"
         Name: "O2UK3728"
-        Port: "/dev/ttyACM2"   # 或 /dev/newsms_o2
-        Description: "O2 UK Roaming"
-        Enabled: true
-      - ID: "sms3"
-        Name: "联通3113"
-        Port: "/dev/ttyACM5"   # 或 /dev/newsms_cu
-        Description: "中国联通 151xxxx3113"
+        Port: "/dev/serial/by-path/pci-0000:07:1b.0-usb-0:3:1.6"
+        Description: "O2 UK 漫游"
         Enabled: true
 
-    # 兼容旧配置（单设备模式）
+    # 兼容旧配置（单设备模式，已废弃，仅保留解析兼容）
     # Port: "/dev/ttyACM0"

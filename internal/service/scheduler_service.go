@@ -21,6 +21,7 @@ type SchedulerService struct {
 	cron          *cron.Cron
 	repo          *repo.ScheduledTaskRepo
 	deviceManager *DeviceManager // 改为使用 DeviceManager
+	textMsgSvc    *TextMessageService
 }
 
 // NewSchedulerService 创建定时任务服务实例
@@ -28,21 +29,23 @@ func NewSchedulerService(
 	logger *zap.Logger,
 	db *gorm.DB,
 	deviceManager *DeviceManager,
+	textMsgSvc *TextMessageService,
 ) *SchedulerService {
 	return &SchedulerService{
 		logger:        logger,
 		repo:          repo.NewScheduledTaskRepo(db),
 		deviceManager: deviceManager,
+		textMsgSvc:    textMsgSvc,
 	}
 }
 
 // ==================== 任务管理方法 ====================
 
 // HasDevice 判断指定设备是否存在（供 handler 校验 DeviceID 用）。
-// DeviceID 留空表示「使用默认设备」，由 DeviceManager 按配置声明顺序取第一个。
+// device_id 为必填：留空返回 false，由调用方给出「必须指定设备」的提示。
 func (s *SchedulerService) HasDevice(deviceID string) bool {
 	if deviceID == "" {
-		return true
+		return false
 	}
 	if s.deviceManager == nil {
 		return false
@@ -129,6 +132,10 @@ func (s *SchedulerService) TriggerTask(ctx context.Context, id string) error {
 
 // ==================== 调度相关方法 ====================
 
+// sendAckTimeout 发送回执等待上限。
+// 超过这个时间仍是 sending 的记录会被置为 unknown（既不算成功也不判失败）。
+const sendAckTimeout = 90 * time.Second
+
 // Start 启动定时任务服务
 func (s *SchedulerService) Start(ctx context.Context) error {
 	s.cron = cron.New()
@@ -144,10 +151,25 @@ func (s *SchedulerService) Start(ctx context.Context) error {
 		return fmt.Errorf("添加检查任务失败: %w", err)
 	}
 
+	// 每 30 秒扫描一次「卡在 sending」的记录，置为 unknown。
+	// 没有这个兜底，设备丢回执时记录会永远停在「发送中」。
+	_, err = s.cron.AddFunc("@every 30s", func() {
+		if s.textMsgSvc == nil {
+			return
+		}
+		if _, err := s.textMsgSvc.ExpireStaleSending(context.Background(), sendAckTimeout); err != nil {
+			s.logger.Error("扫描超时发送记录失败", zap.Error(err))
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("添加超时扫描任务失败: %w", err)
+	}
+
 	// 启动 cron
 	s.cron.Start()
 
-	s.logger.Info("定时任务服务启动成功")
+	s.logger.Info("定时任务服务启动成功",
+		zap.Duration("send_ack_timeout", sendAckTimeout))
 	return nil
 }
 
@@ -215,15 +237,16 @@ func (s *SchedulerService) executeTask(task models.ScheduledTask) error {
 
 	ctx := context.Background()
 
-	// 获取指定设备（如果没有指定，使用第一个启用的设备）
+	// 设备必填：定时短信绝不能「随机/默认」从某张卡发出去
 	deviceID := task.DeviceID
 	if deviceID == "" {
-		deviceID, _ = s.deviceManager.GetFirstEnabledDeviceID()
+		return fmt.Errorf("任务 %s 未指定 device_id（可选: %v），请编辑任务后重新保存",
+			task.Name, s.deviceManager.GetAllDeviceIDs())
 	}
 
 	device, ok := s.deviceManager.GetDevice(deviceID)
 	if !ok {
-		return fmt.Errorf("设备不存在: %s", deviceID)
+		return fmt.Errorf("设备不存在: %s（可选: %v）", deviceID, s.deviceManager.GetAllDeviceIDs())
 	}
 
 	flyMode := device.FlyMode()

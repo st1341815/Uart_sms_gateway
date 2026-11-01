@@ -20,7 +20,9 @@ type DeviceManager struct {
 	// 所有「第一个设备」「设备列表」都必须走 order，不能直接遍历 map，
 	// 否则「未指定设备」时会随机选中某张卡（可能导致国际漫游计费）。
 	order []string
-	mu    sync.RWMutex
+	// limiters 每设备一个发信限流器
+	limiters *sendRateLimiters
+	mu       sync.RWMutex
 
 	// 公共服务（共享）
 	textMsgService  *TextMessageService
@@ -61,6 +63,7 @@ func NewDeviceManager(
 		devices:         make(map[string]*SerialService),
 		deviceConfig:    make(map[string]config.DeviceConfig),
 		order:           make([]string, 0, len(serialConfig.Devices)),
+		limiters:        newSendRateLimiters(),
 		textMsgService:  textMsgService,
 		notifier:        notifier,
 		propertyService: propertyService,
@@ -292,59 +295,57 @@ func (dm *DeviceManager) GetDeviceStatus(id string) (*DeviceStatus, error) {
 }
 
 // SendSMS 通过指定设备发送短信
+// device_id 为必填：多卡场景下「默认设备」会导致短信从非预期的号码
+// （例如境外漫游卡）发出并产生国际资费，因此不做任何兜底。
 func (dm *DeviceManager) SendSMS(deviceID, to, content string) (string, error) {
-	// 如果未指定设备，使用第一个启用的设备
 	if deviceID == "" {
-		ss, id := dm.GetFirstEnabledDevice()
-		if ss == nil {
-			return "", fmt.Errorf("没有可用的设备")
-		}
-		deviceID = id
+		return "", dm.missingDeviceErr()
 	}
 
-	dm.mu.RLock()
-	ss, ok := dm.devices[deviceID]
-	dm.mu.RUnlock()
-
+	ss, ok := dm.GetDevice(deviceID)
 	if !ok {
-		return "", fmt.Errorf("设备不存在: %s", deviceID)
+		return "", fmt.Errorf("设备不存在: %s（可选: %v）", deviceID, dm.GetAllDeviceIDs())
+	}
+
+	// 按设备限流，防止脚本刷爆话费
+	if allowed, _, err := dm.limiters.get(deviceID).Allow(); !allowed {
+		return "", err
 	}
 
 	return ss.SendSMS(to, content)
 }
 
-// SetFlymode 设置指定设备的飞行模式
+// SetFlymode 设置指定设备的飞行模式（device_id 必填）
 func (dm *DeviceManager) SetFlymode(deviceID string, enabled bool) error {
 	if deviceID == "" {
-		deviceID, _ = dm.GetFirstEnabledDeviceID()
+		return dm.missingDeviceErr()
 	}
 
-	dm.mu.RLock()
-	ss, ok := dm.devices[deviceID]
-	dm.mu.RUnlock()
-
+	ss, ok := dm.GetDevice(deviceID)
 	if !ok {
-		return fmt.Errorf("设备不存在: %s", deviceID)
+		return fmt.Errorf("设备不存在: %s（可选: %v）", deviceID, dm.GetAllDeviceIDs())
 	}
 
 	return ss.SetFlymode(enabled)
 }
 
-// RebootMcu 重启指定设备模块
+// RebootMcu 重启指定设备模块（device_id 必填）
 func (dm *DeviceManager) RebootMcu(deviceID string) error {
 	if deviceID == "" {
-		deviceID, _ = dm.GetFirstEnabledDeviceID()
+		return dm.missingDeviceErr()
 	}
 
-	dm.mu.RLock()
-	ss, ok := dm.devices[deviceID]
-	dm.mu.RUnlock()
-
+	ss, ok := dm.GetDevice(deviceID)
 	if !ok {
-		return fmt.Errorf("设备不存在: %s", deviceID)
+		return fmt.Errorf("设备不存在: %s（可选: %v）", deviceID, dm.GetAllDeviceIDs())
 	}
 
 	return ss.RebootMcu()
+}
+
+// missingDeviceErr 统一构造「必须指定设备」的错误，并附上可选项。
+func (dm *DeviceManager) missingDeviceErr() error {
+	return fmt.Errorf("必须指定 device_id（可选: %v）", dm.GetAllDeviceIDs())
 }
 
 // RequestCacheUpdate 请求更新所有设备缓存（按配置声明顺序）

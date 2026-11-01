@@ -203,6 +203,10 @@ export default function ScheduledTasksConfig() {
             toast.warning('请输入目标手机号');
             return;
         }
+        if (!formData.deviceId) {
+            toast.warning('请选择发送设备');
+            return;
+        }
         if (!formData.content.trim()) {
             toast.warning('请输入短信内容');
             return;
@@ -492,14 +496,14 @@ export default function ScheduledTasksConfig() {
                             <label
                                 className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide flex items-center gap-1.5">
                                 <Smartphone size={12} className="text-gray-400"/>
-                                发送设备
+                                发送设备 <span className="text-red-500">*</span>
                             </label>
                             <select
                                 value={formData.deviceId}
                                 onChange={(e) => updateFormField('deviceId', e.target.value)}
                                 className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg px-3 text-sm focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none"
                             >
-                                <option value="">默认设备（按配置顺序取第一个）</option>
+                                <option value="">请选择设备（必选）</option>
                                 {devices.map((d) => (
                                     <option key={d.id} value={d.id}>
                                         {d.name || d.id}（{d.id}{d.description ? ' · ' + d.description : ''}）
@@ -507,7 +511,7 @@ export default function ScheduledTasksConfig() {
                                 ))}
                             </select>
                             <p className="text-xs text-amber-600 mt-1.5">
-                                多卡场景请显式选择：留空时使用默认设备，短信可能从非预期的号码（如境外漫游卡）发出。
+                                必须选择：短信只会从所选卡发出，避免误用境外漫游卡产生国际资费。
                             </p>
                         </div>
 

@@ -95,6 +95,7 @@ func setup(app *orz.App) error {
 		logger,
 		db,
 		deviceManager,
+		textMessageService,
 	)
 	deviceManager.SetScheduledTaskStatusUpdater(schedulerService.UpdateLastRunStatusByMsgId)
 
