@@ -1,0 +1,46 @@
+# Git 相关
+.git
+.gitignore
+.github
+
+# IDE 相关
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# 构建产物（除了需要的 bin 目录）
+# bin 目录需要保留，因为 Dockerfile 需要它
+
+# 前端相关
+web/node_modules
+web/.next
+web/.turbo
+web/dist
+web/.cache
+
+# 日志和数据库
+*.log
+logs/
+*.db
+data/
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+
+# 文档
+*.md
+screenshots/
+docs/
+
+# 配置文件（除了 config.example.yaml）
+config.yaml
+
+# Go 相关
+*.test
+*.out
+vendor/
+go.sum.bak

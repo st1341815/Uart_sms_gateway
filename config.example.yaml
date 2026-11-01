@@ -1,0 +1,50 @@
+database:
+  enabled: true
+  type: sqlite
+  sqlite:
+    path: "./data/app.db"
+  show_sql: false
+log:
+  level: info # debug,info,warning,error
+  filename: ./logs/sms.log
+
+server:
+  addr: "0.0.0.0:8080"
+  ip_extractor: "X-Real-IP"
+
+App:
+  JWT:
+    # 随机生成一个 32 字节字符串（示例已脱敏）
+    Secret: "***REDACTED***"
+    ExpiresHours: 168 # 7天
+  Users:
+    # 使用 Bcrypt 加密（示例已脱敏）
+    admin: "***REDACTED_HASH***"
+  OIDC:
+    Enabled: false
+    Issuer: ""
+    ClientID: ""
+    ClientSecret: ""
+    RedirectURL: "http://localhost:8080/oidc/callback"
+
+  # 串口配置（多设备支持）
+  Serial:
+    Devices:
+      - ID: "sms1"
+        Name: "移动1111"
+        Port: "/dev/ttyACM8"   # 或 /dev/newsms_cmcc
+        Description: "中国移动 180xxxx1111"
+        Enabled: true
+      - ID: "sms2"
+        Name: "O2UK3728"
+        Port: "/dev/ttyACM2"   # 或 /dev/newsms_o2
+        Description: "O2 UK Roaming"
+        Enabled: true
+      - ID: "sms3"
+        Name: "联通3113"
+        Port: "/dev/ttyACM5"   # 或 /dev/newsms_cu
+        Description: "中国联通 151xxxx3113"
+        Enabled: true
+
+    # 兼容旧配置（单设备模式）
+    # Port: "/dev/ttyACM0"

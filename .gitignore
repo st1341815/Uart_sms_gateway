@@ -1,0 +1,26 @@
+# Build artifacts
+uart_sms_forwarder
+uart_sms_forwarder_v*
+
+# Dependencies
+node_modules/
+
+# Runtime
+logs/
+data/
+*.log
+*.db
+
+# Python
+__pycache__/
+*.pyc
+
+# Local backups
+*.bak.*
+*.by-path.*
+
+# Secrets (keep example)
+config.yaml
+
+# OS
+.DS_Store
