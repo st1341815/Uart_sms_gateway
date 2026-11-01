@@ -1,26 +1,30 @@
-version: 3.8
+version: '3.8'
 
 services:
-  # NewSMS - 多设备短信转发器
-  newsms:
-    build:
-      context: .
-      dockerfile: Dockerfile.multi
-    image: uart_sms_forwarder-multi:latest
-    container_name: NewSMS
-    privileged: true
-    devices:
-      # Stable device symlinks from udev rules (/etc/udev/rules.d/99-newsms-symlinks.rules)
-      - /dev/newsms_cmcc:/dev/newsms_cmcc
-      - /dev/newsms_o2:/dev/newsms_o2
-      - /dev/newsms_cu:/dev/newsms_cu
-    ports:
-      - "8080:8080"  # 统一端口
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
-      - ./data:/app/data
-      - ./logs:/app/logs
+  # UART SMS Forwarder - 多设备短信转发器
+  #
+  # 与线上实际部署（192.168.11.21:/home/unit3/sms-multi/docker-compose.yml）保持一致：
+  #   - network_mode: host（应用直接监听宿主机 8080，自身就是 HTTP 服务、无 nginx 层）
+  #   - 串口用 by-path 绑定，避免 ttyACM 编号漂移
+  #   - 挂载 /dev/serial 以便容器内解析 by-path 符号链接
+  sms-multi:
+    image: smstext-multi-device:latest
+    container_name: sms-multi
     restart: unless-stopped
-    labels:
-      - "sms.type=multi-device"
-      - "sms.devices=3"
+    privileged: true
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      # 配置只读挂载
+      - ./config.yaml:/app/config.yaml:ro
+      # 数据（SQLite 数据库）
+      - ./data:/app/data
+      # 日志目录（config.yaml 里 log.filename = ./logs/sms.log）
+      - ./logs:/app/logs
+      # by-path 符号链接需要 /dev/serial 才可解析
+      - /dev/serial:/dev/serial:ro
+    devices:
+      # 与 config.yaml 的 Port 对应；使用 by-path 时这两行可保留作兜底
+      - /dev/ttyACM2:/dev/ttyACM2
+      - /dev/ttyACM5:/dev/ttyACM5

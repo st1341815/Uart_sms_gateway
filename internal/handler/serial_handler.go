@@ -22,11 +22,11 @@ func NewSerialHandler(logger *zap.Logger, deviceManager *service.DeviceManager) 
 	}
 }
 
-// SendSMSRequest 发送短信请求（支持设备选择）
+// SendSMSRequest 发送短信请求（device_id 必填）
 type SendSMSRequest struct {
 	To       string `json:"to"`
 	Content  string `json:"content"`
-	DeviceID string `json:"device_id"` // 可选，指定设备ID
+	DeviceID string `json:"device_id"` // 必填，指定从哪张卡发出
 }
 
 // SendSMS 发送短信
@@ -41,17 +41,24 @@ func (h *SerialHandler) SendSMS(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "手机号和内容不能为空"})
 	}
 
+	// device_id 必填：避免多卡场景下短信从非预期号码发出
+	if req.DeviceID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error":   "必须指定 device_id",
+			"devices": h.deviceManager.GetAllDeviceIDs(),
+		})
+	}
+
 	msgID, err := h.deviceManager.SendSMS(req.DeviceID, req.To, req.Content)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	deviceID := req.DeviceID
-	if deviceID == "" {
-		deviceID, _ = h.deviceManager.GetFirstEnabledDeviceID()
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{"message": "发送成功", "msg_id": msgID, "device_id": deviceID})
+	return c.JSON(http.StatusOK, map[string]string{
+		"message":   "发送成功",
+		"msg_id":    msgID,
+		"device_id": req.DeviceID,
+	})
 }
 
 // GetStatus 获取所有设备状态（保持原始格式兼容）
@@ -137,12 +144,20 @@ type SetFlymodeRequest struct {
 }
 
 // SetFlymode 设置飞行模式
-// POST /api/serial/flymode 或 POST /api/devices/:id/flymode
+// POST /api/devices/:id/flymode（推荐） 或 POST /api/serial/flymode + body.device_id
 func (h *SerialHandler) SetFlymode(c echo.Context) error {
 	deviceID := c.Param("id")
 	var req SetFlymodeRequest
-	if c.Bind(&req) == nil && req.DeviceID != "" {
+	_ = c.Bind(&req)
+	if deviceID == "" && req.DeviceID != "" {
 		deviceID = req.DeviceID
+	}
+
+	if deviceID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error":   "必须指定 device_id",
+			"devices": h.deviceManager.GetAllDeviceIDs(),
+		})
 	}
 
 	if err := h.deviceManager.SetFlymode(deviceID, req.Enabled); err != nil {
@@ -153,12 +168,22 @@ func (h *SerialHandler) SetFlymode(c echo.Context) error {
 }
 
 // RebootMcu 重启模块
-// POST /api/serial/reboot 或 POST /api/devices/:id/reboot
+// POST /api/devices/:id/reboot（推荐） 或 POST /api/serial/reboot + body.device_id
 func (h *SerialHandler) RebootMcu(c echo.Context) error {
 	deviceID := c.Param("id")
-	var req struct{ DeviceID string `json:"device_id"` }
-	if c.Bind(&req) == nil && req.DeviceID != "" {
+	var req struct {
+		DeviceID string `json:"device_id"`
+	}
+	_ = c.Bind(&req)
+	if deviceID == "" && req.DeviceID != "" {
 		deviceID = req.DeviceID
+	}
+
+	if deviceID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]any{
+			"error":   "必须指定 device_id",
+			"devices": h.deviceManager.GetAllDeviceIDs(),
+		})
 	}
 
 	if err := h.deviceManager.RebootMcu(deviceID); err != nil {

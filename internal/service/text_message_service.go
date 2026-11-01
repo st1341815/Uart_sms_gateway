@@ -125,6 +125,45 @@ func (s *TextMessageService) UpdateStatusById(ctx context.Context, id string, st
 	})
 }
 
+// UpdateStatusIfSending 仅当当前状态为 sending 时才更新，返回受影响行数。
+// 用于「超时置 unknown」：如果设备回执正好先到并已改成 sent/failed，
+// 这里就不会覆盖它（避免把成功的结果盖成 unknown）。
+func (s *TextMessageService) UpdateStatusIfSending(ctx context.Context, id string, status models.MessageStatus) (int64, error) {
+	db := s.repo.GetDB(ctx)
+	res := db.Model(&models.TextMessage{}).
+		Where("id = ? AND status = ?", id, models.MessageStatusSending).
+		Update("status", status)
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
+}
+
+// ExpireStaleSending 把「卡在 sending 超过 timeout」的记录置为 unknown。
+//
+// 背景：SendSMS 写串口成功后就置 sending，等设备异步回 sms_send_result 再改成
+// sent/failed。若设备固件丢包、模块重启，回执永远不来，这条记录会永远显示
+// 「发送中」——既误导用户，也没法区分「没发出去」和「发出去了但没回执」。
+//
+// 返回值：被更新的条数。
+func (s *TextMessageService) ExpireStaleSending(ctx context.Context, timeout time.Duration) (int64, error) {
+	db := s.repo.GetDB(ctx)
+	cutoff := time.Now().Add(-timeout).UnixMilli()
+
+	res := db.Model(&models.TextMessage{}).
+		Where("status = ? AND created_at < ?", models.MessageStatusSending, cutoff).
+		Update("status", models.MessageStatusUnknown)
+	if res.Error != nil {
+		return 0, fmt.Errorf("超时扫描失败: %w", res.Error)
+	}
+	if res.RowsAffected > 0 {
+		s.logger.Warn("短信发送超时未收到设备回执，状态置为 unknown",
+			zap.Int64("count", res.RowsAffected),
+			zap.Duration("timeout", timeout))
+	}
+	return res.RowsAffected, nil
+}
+
 // GetConversations 获取会话列表（按对方号码分组）
 func (s *TextMessageService) GetConversations(ctx context.Context) ([]*Conversation, error) {
 	db := s.repo.GetDB(ctx)

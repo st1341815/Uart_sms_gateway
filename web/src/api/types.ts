@@ -31,7 +31,8 @@ export interface Stats {
 export interface SendSMSRequest {
     to: string;
     content: string;
-    device_id?: string;  // 可选，指定设备ID
+    /** 必填：短信只会从所选设备发出（避免误用境外漫游卡产生国际资费） */
+    device_id: string;
 }
 
 // 设置飞行模式请求

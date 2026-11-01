@@ -2,7 +2,7 @@
 
 ## 背景
 
-在多 USB Modem（AirM2M Compo）场景下，如果在配置里直接使用 `/dev/ttyACM2`、`/dev/ttyACM5`、`/dev/ttyACM8` 这类设备名绑定串口，遇到 **USB 断开/重连** 或 **启动顺序变化** 时，内核可能会重新分配 `ttyACM*` 编号，导致：
+在多 USB Modem（AirM2M Compo）场景下，如果在配置里直接使用 `/dev/ttyACM2`、`/dev/ttyACM5` 这类设备名绑定串口，遇到 **USB 断开/重连** 或 **启动顺序变化** 时，内核可能会重新分配 `ttyACM*` 编号，导致：
 
 - 短信/来电被错误归属到另一张卡对应的“设备名称”
 - 通知里出现“接收设备不可能收到该短信”的现象
@@ -24,9 +24,11 @@
 
 本环境映射关系：
 
-- **移动 18055961111 (sms1)** → `/dev/serial/by-path/pci-0000:07:1b.0-usb-0:1:1.6`
+- **联通 15105513113 (sms1)** → `/dev/serial/by-path/pci-0000:07:1b.0-usb-0:2:1.6`
 - **O2 UK 漫游卡 (sms2)** → `/dev/serial/by-path/pci-0000:07:1b.0-usb-0:3:1.6`
-- **联通 15105513113 (sms3)** → `/dev/serial/by-path/pci-0000:07:1b.0-usb-0:2:1.6`
+
+> 历史说明：曾有一张中国移动卡（sms3，`usb-0:1:1.6`），**已撤下不再使用**。
+> 当前只保留上述 2 张卡，设备 ID 顺序为 sms1=联通、sms2=O2。
 
 > 注：绑定前可通过向不同 `ttyACM*` 端口发送设备的 `status` 指令（项目自定义协议）来核对 ICCID/IMSI/号码，从而确认对应关系。
 
@@ -71,10 +73,9 @@ systemctl is-active ModemManager.service
 docker exec NewSMS ls -l /dev/serial/by-path/
 ```
 
-2. 观察下一条短信通知：
-- 中国移动短信应稳定归属到 **移动1111**
-- O2 UK 卡短信归属到 **O2UK3728**
-- 联通短信归属到 **联通3113**
+2. 在 Web 界面的消息列表里确认每条短信的设备标签是否正确（短信必须显式指定 device_id 才能发出）：
+- 联通短信应稳定归属到 **联通3113 (sms1)**
+- O2 UK 卡短信归属到 **O2UK3728 (sms2)**
 
 ## 回滚
 

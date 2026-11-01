@@ -11,9 +11,13 @@ type MessageStatus string
 
 const (
 	MessageStatusReceived MessageStatus = "received" // 接收成功
-	MessageStatusSending  MessageStatus = "sending"  // 发送中
+	MessageStatusSending  MessageStatus = "sending"  // 发送中（已写入串口，等待设备回执）
 	MessageStatusSent     MessageStatus = "sent"     // 发送成功
 	MessageStatusFailed   MessageStatus = "failed"   // 发送失败
+	// MessageStatusUnknown 发送结果未知：写入串口成功，但设备在超时时间内
+	// 没有回 sms_send_result（固件丢包/设备重启等）。
+	// 不能当成成功，也不能直接判失败——短信可能已经发出去了。
+	MessageStatusUnknown MessageStatus = "unknown"
 )
 
 // TextMessage 短信记录

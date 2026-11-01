@@ -23,28 +23,8 @@ type ParsedMessage struct {
 	Payload map[string]interface{}
 }
 
-func parseSMSFrame(data string) (*ParsedMessage, error) {
-	if !strings.HasPrefix(data, smsPrefix) || !strings.HasSuffix(data, smsSuffix) {
-		return nil, errNotSMSFrame
-	}
-
-	jsonData := data[len(smsPrefix) : len(data)-len(smsSuffix)]
-	payload := make(map[string]interface{})
-	if err := json.Unmarshal([]byte(jsonData), &payload); err != nil {
-		return nil, fmt.Errorf("JSON解析失败: %w", err)
-	}
-
-	msgType, ok := payload["type"].(string)
-	if !ok || msgType == "" {
-		return nil, errMissingType
-	}
-
-	return &ParsedMessage{
-		JSON:    jsonData,
-		Type:    msgType,
-		Payload: payload,
-	}, nil
-}
+// 注：parseSMSFrame 已移至 serial_frame.go，
+// 与 FrameReader（按 SMS_START:/SMS_END 边界扫描）配套使用。
 
 func buildCommandMessage(cmd any) ([]byte, string, error) {
 	jsonData, err := json.Marshal(cmd)
