@@ -10,6 +10,7 @@ import SerialControl from './pages/SerialControl';
 import NotificationChannels from './pages/NotificationChannels';
 import ScheduledTasksConfig from './pages/ScheduledTasksConfig';
 import ChangePassword from './pages/ChangePassword';
+import OpenAPIAccess from './pages/OpenAPIAccess';
 import {Toaster} from "@/components/ui/sonner.tsx";
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
                         <Route path="notifications" element={<NotificationChannels/>}/>
                         <Route path="scheduled-tasks" element={<ScheduledTasksConfig/>}/>
                         <Route path="account" element={<ChangePassword/>}/>
+                        <Route path="openapi" element={<OpenAPIAccess/>}/>
                     </Route>
                 </Routes>
             </BrowserRouter>
