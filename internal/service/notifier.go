@@ -174,13 +174,22 @@ func (n *Notifier) SendTelegramByConfig(ctx context.Context, config map[string]i
 }
 
 func (n *Notifier) sendTelegramByConfig(ctx context.Context, config map[string]interface{}, message string) error {
-	n.logger.Info("config:", zap.Any("config", config))
-	apitoken := config["apiToken"].(string)
-	userid := config["userid"].(string)
-	proxyEnabled := config["proxyEnabled"].(bool)
-	proxyUrl := config["proxyUrl"].(string)
-	proxyUsername := config["proxyUsername"].(string)
-	proxyPassword := config["proxyPassword"].(string)
+	// 注意：不能打印 config 原文——里面含 apiToken 与代理密码。
+	// 也绝不能对 config 做裸类型断言：配置缺字段会 panic，
+	// 而通知是在 goroutine 里跑的，panic 会直接终止整个进程。
+	apitoken := cfgString(config, "apiToken")
+	userid := cfgString(config, "userid")
+	proxyEnabled := cfgBool(config, "proxyEnabled")
+	proxyUrl := cfgString(config, "proxyUrl")
+	proxyUsername := cfgString(config, "proxyUsername")
+	proxyPassword := cfgString(config, "proxyPassword")
+
+	if apitoken == "" {
+		return fmt.Errorf("Telegram 配置缺少 apiToken")
+	}
+	if userid == "" {
+		return fmt.Errorf("Telegram 配置缺少 userid")
+	}
 
 	// 构建发送消息的URL
 	baseURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", apitoken)
@@ -273,7 +282,10 @@ func (n *Notifier) sendCustomWebhook(ctx context.Context, config map[string]inte
 	})
 	n.logger.Sugar().Debugf("自定义Webhook请求体: %s", bodyStr)
 	var reqBody = strings.NewReader(bodyStr)
-	var contentType = config["contentType"].(string)
+	contentType := cfgString(config, "contentType")
+	if contentType == "" {
+		contentType = "application/json"
+	}
 
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, method, webhookURL, reqBody)
@@ -597,4 +609,43 @@ func buildProxyURL(rawProxyURL string, username string, password string) (*url.U
 		u.User = url.UserPassword(username, password)
 	}
 	return u, nil
+}
+
+// cfgString 安全地从渠道配置里取字符串。
+// 配置来自用户填写的 JSON，字段可能缺失或类型不符，
+// 直接 `config[k].(string)` 会 panic（通知跑在 goroutine 里，panic 会杀进程）。
+func cfgString(config map[string]interface{}, key string) string {
+	v, ok := config[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch s := v.(type) {
+	case string:
+		return s
+	case float64: // JSON 数字
+		return strconv.FormatFloat(s, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(s)
+	default:
+		return ""
+	}
+}
+
+// cfgBool 安全地从渠道配置里取布尔值（兼容 "true"/"1" 之类的字符串写法）。
+func cfgBool(config map[string]interface{}, key string) bool {
+	v, ok := config[key]
+	if !ok || v == nil {
+		return false
+	}
+	switch b := v.(type) {
+	case bool:
+		return b
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(b))
+		return err == nil && parsed
+	case float64:
+		return b != 0
+	default:
+		return false
+	}
 }

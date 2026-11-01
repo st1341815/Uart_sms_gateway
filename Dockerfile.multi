@@ -3,7 +3,12 @@
 
 FROM golang:1.25-alpine AS builder
 WORKDIR /build
+# web/assets.go 用 go:embed 引用 web/dist，必须先构建前端
+RUN apk add --no-cache git nodejs npm
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
+RUN cd web && npm ci && npm run build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
 
 FROM alpine:latest

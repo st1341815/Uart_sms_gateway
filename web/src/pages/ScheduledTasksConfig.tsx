@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import {Calendar, Clock, Edit, MessageSquare, Phone, Plus, Play, Trash2, CheckCircle2, XCircle} from 'lucide-react';
+import {Calendar, Clock, Edit, MessageSquare, Phone, Plus, Play, Smartphone, Trash2, CheckCircle2, XCircle} from 'lucide-react';
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 import {Button} from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {getDevicesList} from '../api/serial';
 import {
     createScheduledTask,
     deleteScheduledTask,
@@ -29,10 +30,20 @@ interface TaskFormData {
     intervalDays: number;
     phoneNumber: string;
     content: string;
+    /** 留空 = 使用默认设备（按 config 声明顺序取第一个） */
+    deviceId: string;
 }
 
 export default function ScheduledTasksConfig() {
     const queryClient = useQueryClient();
+    // 设备列表（用于「发送设备」下拉）
+    const {data: devicesResp} = useQuery({
+        queryKey: ['devices-for-scheduled'],
+        queryFn: getDevicesList,
+        staleTime: 30000,
+    });
+    const devices = devicesResp?.devices ?? [];
+
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
     const [formData, setFormData] = useState<TaskFormData>({
@@ -41,6 +52,7 @@ export default function ScheduledTasksConfig() {
         intervalDays: 90,
         phoneNumber: '',
         content: '',
+        deviceId: '',
     });
 
     // 获取状态显示信息
@@ -143,6 +155,7 @@ export default function ScheduledTasksConfig() {
             intervalDays: 90,
             phoneNumber: '',
             content: '',
+            deviceId: '',
         });
     };
 
@@ -162,6 +175,7 @@ export default function ScheduledTasksConfig() {
             intervalDays: task.intervalDays,
             phoneNumber: task.phoneNumber,
             content: task.content,
+            deviceId: task.deviceId || '',
         });
         setDialogOpen(true);
     };
@@ -471,6 +485,30 @@ export default function ScheduledTasksConfig() {
                                     接收短信的手机号码
                                 </p>
                             </div>
+                        </div>
+
+                        {/* 发送设备 */}
+                        <div>
+                            <label
+                                className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide flex items-center gap-1.5">
+                                <Smartphone size={12} className="text-gray-400"/>
+                                发送设备
+                            </label>
+                            <select
+                                value={formData.deviceId}
+                                onChange={(e) => updateFormField('deviceId', e.target.value)}
+                                className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg px-3 text-sm focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none"
+                            >
+                                <option value="">默认设备（按配置顺序取第一个）</option>
+                                {devices.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.name || d.id}（{d.id}{d.description ? ' · ' + d.description : ''}）
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-amber-600 mt-1.5">
+                                多卡场景请显式选择：留空时使用默认设备，短信可能从非预期的号码（如境外漫游卡）发出。
+                            </p>
                         </div>
 
                         {/* 短信内容 */}

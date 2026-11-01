@@ -38,6 +38,27 @@ func NewSchedulerService(
 
 // ==================== 任务管理方法 ====================
 
+// HasDevice 判断指定设备是否存在（供 handler 校验 DeviceID 用）。
+// DeviceID 留空表示「使用默认设备」，由 DeviceManager 按配置声明顺序取第一个。
+func (s *SchedulerService) HasDevice(deviceID string) bool {
+	if deviceID == "" {
+		return true
+	}
+	if s.deviceManager == nil {
+		return false
+	}
+	_, ok := s.deviceManager.GetDevice(deviceID)
+	return ok
+}
+
+// DeviceIDs 返回当前可用设备 ID 列表（按配置顺序），用于校验失败时提示。
+func (s *SchedulerService) DeviceIDs() []string {
+	if s.deviceManager == nil {
+		return nil
+	}
+	return s.deviceManager.GetAllDeviceIDs()
+}
+
 // GetAll 获取所有定时任务
 func (s *SchedulerService) GetAll(ctx context.Context) ([]models.ScheduledTask, error) {
 	return s.repo.FindAll(ctx)

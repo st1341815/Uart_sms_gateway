@@ -24,3 +24,9 @@ config.yaml
 
 # OS
 .DS_Store
+
+# 注意：web/dist 会被 go:embed 引用。
+# 如果希望「干净 clone 后直接 go build」也能成功，可以改成：
+#   cd web && npm ci && npm run build
+# 或者把 dist 从 .gitignore 移除以提交构建产物（仓库体积换便利）。
+# 现在不忽略它，允许提交。

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -21,7 +22,11 @@ type OIDCService struct {
 	provider     *oidc.Provider
 	oauth2Config oauth2.Config
 	verifier     *oidc.IDTokenVerifier
-	stateStore   map[string]time.Time // 简单的 state 存储（生产环境应使用 Redis 等）
+	// stateStore 简单的 state 存储（生产环境应使用 Redis 等）
+	// 必须加锁：GenerateAuthURL 写、validateState 读、cleanExpiredStates 遍历，
+	// 都是并发路径，未加锁时 Go 会 fatal: concurrent map read and map write
+	stateMu    sync.Mutex
+	stateStore map[string]time.Time
 }
 
 // NewOIDCService 创建 OIDC 服务
@@ -98,11 +103,11 @@ func (s *OIDCService) GenerateAuthURL() (string, string, error) {
 		return "", "", fmt.Errorf("生成 state 失败: %w", err)
 	}
 
-	// 存储 state（有效期 10 分钟）
+	// 存储 state（有效期 10 分钟）并顺手清理过期的 state
+	s.stateMu.Lock()
 	s.stateStore[state] = time.Now().Add(10 * time.Minute)
-
-	// 清理过期的 state
-	s.cleanExpiredStates()
+	s.cleanExpiredStatesLocked()
+	s.stateMu.Unlock()
 
 	authURL := s.oauth2Config.AuthCodeURL(state)
 	return authURL, state, nil
@@ -119,8 +124,10 @@ func (s *OIDCService) ExchangeCode(ctx context.Context, code, state string) (str
 		return "", "", errors.New("无效的 state")
 	}
 
-	// 删除已使用的 state
+	// 删除已使用的 state（一次性使用，防重放）
+	s.stateMu.Lock()
 	delete(s.stateStore, state)
+	s.stateMu.Unlock()
 
 	// 交换授权码
 	oauth2Token, err := s.oauth2Config.Exchange(ctx, code)
@@ -183,8 +190,10 @@ func (s *OIDCService) generateState() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// validateState 验证 state
+// validateState 验证 state（内部持锁）
 func (s *OIDCService) validateState(state string) bool {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	expiresAt, exists := s.stateStore[state]
 	if !exists {
 		return false
@@ -192,8 +201,9 @@ func (s *OIDCService) validateState(state string) bool {
 	return time.Now().Before(expiresAt)
 }
 
-// cleanExpiredStates 清理过期的 state
-func (s *OIDCService) cleanExpiredStates() {
+// cleanExpiredStatesLocked 清理过期的 state。
+// 调用方必须已持有 stateMu（不要在本函数内再加锁，否则死锁）。
+func (s *OIDCService) cleanExpiredStatesLocked() {
 	now := time.Now()
 	for state, expiresAt := range s.stateStore {
 		if now.After(expiresAt) {

@@ -6,6 +6,8 @@ export interface TextMessage {
     content: string;
     type: 'incoming' | 'outgoing';
     status: 'received' | 'sending' | 'sent' | 'failed';
+    /** 收发该消息的设备 ID（sms1/sms2...）。历史数据（字段引入前）为 undefined */
+    deviceId?: string;
     timestamp: number;
     createdAt: number;
     updatedAt: number;

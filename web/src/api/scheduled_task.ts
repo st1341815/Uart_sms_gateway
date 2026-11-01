@@ -10,6 +10,12 @@ export interface ScheduledTask {
     intervalDays: number;
     phoneNumber: string;
     content: string;
+    /**
+     * 发送该任务所用设备 ID。
+     * 留空表示使用默认设备（按 config.yaml 中 Devices 的声明顺序取第一个）。
+     * 多卡场景建议显式指定，避免短信从非预期号码（如境外漫游卡）发出。
+     */
+    deviceId?: string;
     createdAt?: number;
     lastRunAt?: number;
     lastMsgId?: string;

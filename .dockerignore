@@ -17,8 +17,9 @@
 web/node_modules
 web/.next
 web/.turbo
-web/dist
 web/.cache
+# 注意：不要排除 web/dist —— 它是 go:embed 的输入，
+# 排除后容器内 go build 会因「pattern dist/*: no matching files」失败。
 
 # 日志和数据库
 *.log

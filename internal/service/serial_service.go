@@ -52,6 +52,13 @@ type SerialService struct {
 	portName  string // 当前使用的串口名称
 	connected bool   // 连接状态
 
+	// writeMu 保护串口写操作：定时状态查询、发信、飞行模式/重启命令都会写同一个串口，
+	// 不加锁会让两条命令的字节在 UART 上交错，设备收到半截帧（静默失败）。
+	writeMu sync.Mutex
+	// smsSendMu 串行化「整条发信流程」（入库 -> 写串口 -> 等回执），
+	// 避免多条短信同时发出时 request_id 与回执错配。
+	smsSendMu sync.Mutex
+
 	// 设备的飞行模式查询永远返回 false，无奈只能在应用层处理
 	flyMode atomic.Bool
 }
@@ -244,7 +251,10 @@ func (s *SerialService) connectSerial(portName string) error {
 		return err
 	}
 
+	// 与写操作共用锁：保证赋值 s.port 时没有并发的写/关闭
+	s.writeMu.Lock()
 	s.port = port
+	s.writeMu.Unlock()
 	return nil
 }
 
@@ -307,16 +317,21 @@ func (s *SerialService) listenSerialData(connCtx context.Context, connCancel con
 		if r := recover(); r != nil {
 			s.logger.Error("串口监听 goroutine panic", zap.Any("recover", r))
 		}
-		// 关闭串口
-		if s.port != nil {
-			s.port.Close()
-			s.port = nil
-		}
+		// 关闭串口（closeSerial 内部持 writeMu，避免与写操作竞争）
+		s.closeSerial()
 		// 取消连接 context，通知其他 goroutine 连接已断开
 		connCancel()
 	}()
 
-	reader := bufio.NewReader(s.port)
+	// 取端口快照：整个过程只用本地变量，
+	// 避免 s.port 被并发置空导致 nil 解引用。
+	s.writeMu.Lock()
+	port := s.port
+	s.writeMu.Unlock()
+	if port == nil {
+		return
+	}
+	reader := bufio.NewReader(port)
 
 	for {
 		select {
@@ -328,7 +343,8 @@ func (s *SerialService) listenSerialData(connCtx context.Context, connCancel con
 			if err != nil {
 				if err == io.EOF {
 					// EOF 可能表示设备断开
-					s.logger.Warn("串口读取 EOF，设备可能已断开")
+					s.logger.Warn("串口读取 EOF，设备可能已断开",
+						zap.String("device_id", s.deviceID))
 					return
 				}
 				// 检查 context 是否已取消
@@ -336,7 +352,9 @@ func (s *SerialService) listenSerialData(connCtx context.Context, connCancel con
 					return
 				}
 				// 其他错误，可能是设备断开或硬件错误
-				s.logger.Error("读取串口数据错误，退出监听", zap.Error(err))
+				s.logger.Error("读取串口数据错误，退出监听",
+					zap.String("device_id", s.deviceID),
+					zap.Error(err))
 				return
 			}
 
@@ -380,17 +398,26 @@ func (s *SerialService) RequestCacheUpdate() {
 
 // processReceivedData 处理接收到的数据
 func (s *SerialService) processReceivedData(data string) {
-	s.logger.Sugar().Debugf("received data: %s", data)
+	// 只记录长度，不打印原文：原始帧含 IMSI/ICCID/短信正文，
+	// 且每 10 秒每设备都会收到状态帧，全量打印会把日志刷到百万行。
+	s.logger.Debug("收到串口数据",
+		zap.String("device_id", s.deviceID),
+		zap.Int("bytes", len(data)))
 	msg, err := parseSMSFrame(data)
 	if err != nil {
 		if errors.Is(err, errNotSMSFrame) {
 			return
 		}
 		if errors.Is(err, errMissingType) {
-			s.logger.Warn("消息类型缺失", zap.String("data", data))
+			s.logger.Warn("消息类型缺失",
+				zap.String("device_id", s.deviceID),
+				zap.Int("bytes", len(data)))
 			return
 		}
-		s.logger.Error("解析串口消息失败", zap.Error(err), zap.String("data", data))
+		s.logger.Error("解析串口消息失败",
+			zap.String("device_id", s.deviceID),
+			zap.Error(err),
+			zap.Int("bytes", len(data)))
 		return
 	}
 
@@ -399,6 +426,11 @@ func (s *SerialService) processReceivedData(data string) {
 
 // SendSMS 发送短信
 func (s *SerialService) SendSMS(to, content string) (string, error) {
+	// 同一设备的发信流程必须串行：保存记录 -> 写串口 -> 等设备回执，
+	// 并发调用会让两条命令的字节在 UART 上交错，导致帧损坏。
+	s.smsSendMu.Lock()
+	defer s.smsSendMu.Unlock()
+
 	// 先保存发送记录，状态为 "sending"
 	ctx := context.Background()
 	msgID := uuid.NewString()
@@ -409,6 +441,7 @@ func (s *SerialService) SendSMS(to, content string) (string, error) {
 		Content:   content,
 		Type:      models.MessageTypeOutgoing,
 		Status:    models.MessageStatusSending, // 初始状态为发送中
+		DeviceID:  s.deviceID,                  // 记录发送设备，多卡场景可追溯
 		CreatedAt: time.Now().UnixMilli(),
 	}
 
@@ -428,12 +461,14 @@ func (s *SerialService) SendSMS(to, content string) (string, error) {
 	if err := s.sendJSONCommand(cmd); err != nil {
 		s.logger.Error("发送短信命令失败", zap.Error(err))
 		// 更新状态为失败
-		// 更新状态为失败
 		_ = s.textMsgService.UpdateStatusById(ctx, msgID, models.MessageStatusFailed)
 		return "", err
 	}
 
-	s.logger.Info("发送短信命令成功", zap.String("to", to), zap.String("request_id", msgID))
+	s.logger.Info("发送短信命令成功",
+		zap.String("device_id", s.deviceID),
+		zap.String("to", to),
+		zap.String("request_id", msgID))
 
 	return msgID, nil
 }
@@ -445,13 +480,14 @@ func (s *SerialService) GetStatus() (*StatusData, error) {
 
 	// 从缓存读取
 	if status, ok := s.deviceCache.Get(CacheKeyDeviceStatus); ok {
-		// 更新串口连接信息
-		status.PortName = portName
-		status.Connected = connected
-
-		// 更新飞行模式状态
-		status.Flymode = s.FlyMode()
-		return status, nil
+		// 缓存中的对象可能被多个 HTTP 请求并发读取，
+		// 直接修改并返回同一指针会造成 data race（状态串台），
+		// 因此返回副本。
+		snapshot := *status
+		snapshot.PortName = portName
+		snapshot.Connected = connected
+		snapshot.Flymode = s.FlyMode()
+		return &snapshot, nil
 	}
 
 	// 缓存未命中，但仍然返回连接状态
@@ -494,21 +530,60 @@ func (s *SerialService) RebootMcu() error {
 }
 
 // sendJSONCommand 发送JSON命令到设备
+// 全程持有 writeMu：保证一次命令的字节完整写出后才轮到下一条，
+// 否则并发写会让 UART 上出现交错的半截帧。
 func (s *SerialService) sendJSONCommand(cmd any) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
 	if s.port == nil {
 		return fmt.Errorf("串口未连接")
 	}
 
-	message, jsonData, err := buildCommandMessage(cmd)
+	message, _, err := buildCommandMessage(cmd)
 	if err != nil {
 		return err
 	}
 
-	_, err = s.port.Write(message)
-	if err != nil {
+	if err := writeAll(s.port, message); err != nil {
 		return fmt.Errorf("串口写入失败: %w", err)
 	}
-	s.logger.Sugar().Debugf("send command: %s", jsonData)
+	s.logger.Debug("串口命令已发送",
+		zap.String("device_id", s.deviceID),
+		zap.Int("payload_bytes", len(message)))
 
 	return nil
+}
+
+// writeAll 完整写出全部字节。
+// 串口在缓冲区满时会「短写」（返回 n < len(data) 且 err == nil），
+// 直接丢弃 n 会导致命令被截断，因此必须循环补齐。
+func writeAll(w io.Writer, data []byte) error {
+	for len(data) > 0 {
+		n, err := w.Write(data)
+		if err != nil {
+			return err
+		}
+		if n <= 0 || n > len(data) {
+			return io.ErrShortWrite
+		}
+		data = data[n:]
+	}
+	return nil
+}
+
+// closeSerial 关闭串口。与写操作共用 writeMu，
+// 避免断连时「关闭端口」与「写端口」产生竞争。
+func (s *SerialService) closeSerial() {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if s.port == nil {
+		return
+	}
+	if err := s.port.Close(); err != nil {
+		s.logger.Debug("关闭串口失败",
+			zap.String("device_id", s.deviceID),
+			zap.Error(err))
+	}
+	s.port = nil
 }
