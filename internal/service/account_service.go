@@ -8,7 +8,6 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
-	"golang.org/x/crypto/bcrypt"
 )
 
 func NewAccountService(logger *zap.Logger, oidcService *OIDCService, appConfig *config.AppConfig) *AccountService {
@@ -30,7 +29,6 @@ func NewAccountService(logger *zap.Logger, oidcService *OIDCService, appConfig *
 		oidcService:      oidcService,
 		jwtSecret:        jwtSecret,
 		tokenExpireHours: tokenExpireHours,
-		users:            appConfig.Users,
 	}
 	return service
 }
@@ -41,7 +39,13 @@ type AccountService struct {
 	jwtSecret        string
 	tokenExpireHours int
 
-	users map[string]string
+	// credentials 口令存储（数据库），改密码即时生效
+	credentials *CredentialService
+}
+
+// SetCredentialService 注入口令服务（在 app 初始化时调用）
+func (s *AccountService) SetCredentialService(cred *CredentialService) {
+	s.credentials = cred
 }
 
 // JWTClaims JWT 声明
@@ -144,23 +148,27 @@ func (s *AccountService) Logout(ctx context.Context, userID string) error {
 	return nil
 }
 
-// ValidateCredentials 验证用户名和密码
+// ValidateCredentials 验证用户名和密码。
+// 口令来自数据库（config.yaml 的 Users 仅作首次种子），
+// 因此后台改密码后立即生效，且重启不丢。
 func (s *AccountService) ValidateCredentials(ctx context.Context, username, password string) error {
-	// 从配置中获取用户的bcrypt密码哈希
-	hashedPassword, exists := s.users[username]
-	if !exists {
-		s.logger.Debug("用户不存在", zap.String("username", username))
+	if s.credentials == nil {
+		return errors.New("口令服务未初始化")
+	}
+	if err := s.credentials.Verify(username, password); err != nil {
+		s.logger.Debug("认证失败", zap.String("username", username))
 		return errors.New("用户名或密码错误")
 	}
-
-	// 验证密码
-	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
-		s.logger.Debug("密码验证失败", zap.String("username", username), zap.Error(err))
-		return errors.New("用户名或密码错误")
-	}
-
 	s.logger.Info("User 认证成功", zap.String("username", username))
 	return nil
+}
+
+// ChangePassword 修改口令（会校验旧口令与强度）
+func (s *AccountService) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) error {
+	if s.credentials == nil {
+		return errors.New("口令服务未初始化")
+	}
+	return s.credentials.ChangePassword(ctx, username, oldPassword, newPassword)
 }
 
 // ValidateToken 验证 JWT token
@@ -195,7 +203,7 @@ type AuthConfig struct {
 func (s *AccountService) GetAuthConfig() *AuthConfig {
 	return &AuthConfig{
 		OIDCEnabled:     s.oidcService.IsEnabled(),
-		PasswordEnabled: len(s.users) > 0,
+		PasswordEnabled: s.credentials != nil && s.credentials.UserCount() > 0,
 	}
 }
 

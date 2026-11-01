@@ -1,5 +1,5 @@
 import {Link, Outlet, useLocation, useNavigate} from 'react-router-dom';
-import {Bell, Clock, LayoutDashboard, LogOut, MessageSquare, Smartphone} from 'lucide-react';
+import {Bell, Clock, KeyRound, LayoutDashboard, LogOut, MessageSquare, ShieldCheck, Smartphone} from 'lucide-react';
 import {Button} from "@/components/ui/button.tsx";
 import {useQuery} from "@tanstack/react-query";
 import {getVersion} from "@/api/property.ts";
@@ -132,6 +132,21 @@ export default function Layout() {
                                 </div>
                             </div>
 
+                            {/* 账号安全 */}
+                            <Link to="/account">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className={cn(
+                                        'text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg',
+                                        location.pathname === '/account' && 'bg-gray-100 text-gray-900'
+                                    )}
+                                >
+                                    <ShieldCheck className="w-4 h-4 mr-2"/>
+                                    账号安全
+                                </Button>
+                            </Link>
+
                             {/* 登出按钮 */}
                             <Button
                                 variant="ghost"
@@ -152,6 +167,19 @@ export default function Layout() {
                                     <span className="text-xs font-medium text-green-700">在线</span>
                                 </div>
                             )}
+                            <Link to="/account">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className={cn(
+                                        'text-gray-600',
+                                        location.pathname === '/account' && 'bg-gray-100 text-gray-900'
+                                    )}
+                                    title="账号安全"
+                                >
+                                    <KeyRound className="w-4 h-4"/>
+                                </Button>
+                            </Link>
                             <Button
                                 variant="ghost"
                                 size="sm"
