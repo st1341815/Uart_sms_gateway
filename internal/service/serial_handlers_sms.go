@@ -57,6 +57,7 @@ func (s *SerialService) handleIncomingSMS(msg *ParsedMessage) {
 		Content:   sms.Content,
 		Type:      models.MessageTypeIncoming,
 		Status:    models.MessageStatusReceived,
+		DeviceID:  s.deviceID, // 记录来源设备，多卡场景可追溯
 		CreatedAt: time.Now().UnixMilli(),
 	}
 
@@ -65,7 +66,18 @@ func (s *SerialService) handleIncomingSMS(msg *ParsedMessage) {
 	}
 
 	// 异步发送通知（包含设备信息）
-	go s.sendNotification(ctx, sms)
+	// 注意：通知链路的通知渠道配置可能缺字段导致 panic，
+	// 必须在 goroutine 内部 recover，否则会终止整个进程。
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Error("通知 goroutine panic（已恢复）",
+					zap.String("device_id", s.deviceID),
+					zap.Any("recover", r))
+			}
+		}()
+		s.sendNotification(ctx, sms)
+	}()
 }
 
 // sendNotification 发送通知（包含设备信息）
@@ -153,14 +165,23 @@ func (s *SerialService) handleSMSSendResult(msg *ParsedMessage) {
 		s.logger.Warn("短信发送失败",
 			zap.String("to", to),
 			zap.String("request_id", requestID))
-		go s.sendNotificationMessage(context.Background(), NotificationMessage{
-			Type:       "sms",
-			From:       "UART 短信转发器",
-			Content:    fmt.Sprintf("短信发送失败: %s", to),
-			Timestamp:  time.Now().Unix(),
-			DeviceID:   s.deviceID,
-			DeviceName: s.deviceConfig.Name,
-		})
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Error("通知 goroutine panic（已恢复）",
+						zap.String("device_id", s.deviceID),
+						zap.Any("recover", r))
+				}
+			}()
+			s.sendNotificationMessage(context.Background(), NotificationMessage{
+				Type:       "sms",
+				From:       "UART 短信转发器",
+				Content:    fmt.Sprintf("短信发送失败: %s", to),
+				Timestamp:  time.Now().Unix(),
+				DeviceID:   s.deviceID,
+				DeviceName: s.deviceConfig.Name,
+			})
+		}()
 	}
 
 	if err := s.textMsgService.UpdateStatusById(ctx, requestID, status); err != nil {

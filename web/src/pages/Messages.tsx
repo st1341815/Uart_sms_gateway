@@ -2,7 +2,7 @@ import {useEffect, useRef, useState} from 'react';
 import {MoreVertical, RefreshCw, Search, Send, Trash2, User, X} from 'lucide-react';
 import {toast} from 'sonner';
 import {clearMessages, getConversations, getConversationMessages, deleteConversation, deleteMessage} from '../api/messages';
-import {sendSMS} from '../api/serial';
+import {getDevicesList, sendSMS} from '../api/serial';
 import {Input} from '@/components/ui/input';
 import {Button} from '@/components/ui/button';
 import {
@@ -43,6 +43,14 @@ export default function Messages() {
     };
 
     // 使用新的会话列表 API
+    // 设备列表：用于把消息上的 deviceId 渲染成可读名称
+    const {data: devicesResp} = useQuery({
+        queryKey: ['devices-for-messages'],
+        queryFn: getDevicesList,
+        staleTime: 60000,
+    });
+    const devices = devicesResp?.devices ?? [];
+
     const {data: conversations = [], isLoading, refetch} = useQuery<Conversation[]>({
         queryKey: ['conversations'],
         queryFn: getConversations,
@@ -166,6 +174,12 @@ export default function Messages() {
         e.stopPropagation();
         if (!confirm('确定要删除这条消息吗？此操作不可恢复！')) return;
         deleteMessageMutation.mutate(messageId);
+    };
+
+    // 设备 ID -> 可读名称（取不到就用 ID 本身）
+    const deviceLabel = (deviceId: string) => {
+        const d = devices.find((x) => x.id === deviceId);
+        return d?.name || deviceId;
     };
 
     const formatTime = (timestamp: number) => {
@@ -396,6 +410,18 @@ export default function Messages() {
                                                     className={`text-[10px] ${msg.type === 'outgoing' ? 'text-blue-600' : 'text-gray-400'}`}>
                                                     {formatTime(msg.createdAt)}
                                                 </span>
+                                                {msg.deviceId && (
+                                                    <span
+                                                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                                            msg.type === 'outgoing'
+                                                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                : 'bg-gray-50 text-gray-600 border-gray-200'
+                                                        }`}
+                                                        title={`来源设备: ${deviceLabel(msg.deviceId)}`}
+                                                    >
+                                                        {deviceLabel(msg.deviceId)}
+                                                    </span>
+                                                )}
                                                 {msg.type === 'outgoing' && getStatusBadge(msg.status)}
                                             </div>
                                         </div>

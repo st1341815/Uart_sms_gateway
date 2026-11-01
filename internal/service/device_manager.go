@@ -16,7 +16,11 @@ type DeviceManager struct {
 	config       config.SerialConfig
 	devices      map[string]*SerialService // 设备ID -> 服务实例
 	deviceConfig map[string]config.DeviceConfig
-	mu           sync.RWMutex
+	// order 保存设备的**配置声明顺序**。Go 的 map 遍历顺序是随机的，
+	// 所有「第一个设备」「设备列表」都必须走 order，不能直接遍历 map，
+	// 否则「未指定设备」时会随机选中某张卡（可能导致国际漫游计费）。
+	order []string
+	mu    sync.RWMutex
 
 	// 公共服务（共享）
 	textMsgService  *TextMessageService
@@ -56,6 +60,7 @@ func NewDeviceManager(
 		config:          serialConfig,
 		devices:         make(map[string]*SerialService),
 		deviceConfig:    make(map[string]config.DeviceConfig),
+		order:           make([]string, 0, len(serialConfig.Devices)),
 		textMsgService:  textMsgService,
 		notifier:        notifier,
 		propertyService: propertyService,
@@ -139,6 +144,7 @@ func (dm *DeviceManager) Initialize() error {
 		}
 
 		dm.devices[dc.ID] = ss
+		dm.order = append(dm.order, dc.ID)
 		dm.logger.Info("设备服务已初始化",
 			zap.String("id", dc.ID),
 			zap.String("name", dc.Name),
@@ -155,7 +161,12 @@ func (dm *DeviceManager) Initialize() error {
 // StartAll 启动所有设备服务
 func (dm *DeviceManager) StartAll() {
 	dm.mu.RLock()
-	for id, ss := range dm.devices {
+	// 按配置声明顺序启动，保证日志顺序稳定可读
+	for _, id := range dm.order {
+		ss, ok := dm.devices[id]
+		if !ok {
+			continue
+		}
 		dm.logger.Info("启动设备服务", zap.String("id", id))
 		go ss.Start()
 	}
@@ -171,44 +182,57 @@ func (dm *DeviceManager) GetDevice(id string) (*SerialService, bool) {
 }
 
 // GetFirstEnabledDevice 获取第一个启用的设备（用于默认发送）
+// 注意：必须按配置声明顺序取第一个，绝不能遍历 map（顺序随机）。
 func (dm *DeviceManager) GetFirstEnabledDevice() (*SerialService, string) {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
-	for id, ss := range dm.devices {
-		return ss, id
+	for _, id := range dm.order {
+		if ss, ok := dm.devices[id]; ok {
+			return ss, id
+		}
 	}
 	return nil, ""
 }
 
-// GetAllDeviceIDs 获取所有设备ID列表
+// GetAllDeviceIDs 获取所有设备ID列表（按配置声明顺序）
 func (dm *DeviceManager) GetAllDeviceIDs() []string {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
-	ids := make([]string, 0, len(dm.devices))
-	for id := range dm.devices {
-		ids = append(ids, id)
+	ids := make([]string, 0, len(dm.order))
+	for _, id := range dm.order {
+		if _, ok := dm.devices[id]; ok {
+			ids = append(ids, id)
+		}
 	}
 	return ids
 }
 
-// GetAllDeviceConfigs 获取所有设备配置
+// GetAllDeviceConfigs 获取所有设备配置（按配置声明顺序）
 func (dm *DeviceManager) GetAllDeviceConfigs() []config.DeviceConfig {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
- configs := make([]config.DeviceConfig, 0, len(dm.deviceConfig))
-	for _, dc := range dm.deviceConfig {
-	 configs = append(configs, dc)
+	configs := make([]config.DeviceConfig, 0, len(dm.order))
+	for _, id := range dm.order {
+		dc, ok := dm.deviceConfig[id]
+		if !ok {
+			continue
+		}
+		configs = append(configs, dc)
 	}
 	return configs
 }
 
-// GetAllStatus 获取所有设备状态
+// GetAllStatus 获取所有设备状态（按配置声明顺序，保证前端下拉顺序稳定）
 func (dm *DeviceManager) GetAllStatus() []*DeviceStatus {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
-	statuses := make([]*DeviceStatus, 0, len(dm.devices))
-	for id, ss := range dm.devices {
+	statuses := make([]*DeviceStatus, 0, len(dm.order))
+	for _, id := range dm.order {
+		ss, ok := dm.devices[id]
+		if !ok {
+			continue
+		}
 		status, err := ss.GetStatus()
 		deviceConfig := dm.deviceConfig[id]
 
@@ -323,28 +347,35 @@ func (dm *DeviceManager) RebootMcu(deviceID string) error {
 	return ss.RebootMcu()
 }
 
-// RequestCacheUpdate 请求更新所有设备缓存
+// RequestCacheUpdate 请求更新所有设备缓存（按配置声明顺序）
 func (dm *DeviceManager) RequestCacheUpdate() {
 	dm.mu.RLock()
-	for _, ss := range dm.devices {
-		go ss.RequestCacheUpdate()
+	defer dm.mu.RUnlock()
+	for _, id := range dm.order {
+		if ss, ok := dm.devices[id]; ok {
+			go ss.RequestCacheUpdate()
+		}
 	}
-	dm.mu.RUnlock()
 }
 
 // GetFirstEnabledDeviceID 获取第一个启用的设备ID
+// 注意：按配置声明顺序返回，不能遍历 map（顺序随机）。
 func (dm *DeviceManager) GetFirstEnabledDeviceID() (string, bool) {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
-	for id := range dm.devices {
-		return id, true
+	for _, id := range dm.order {
+		if _, ok := dm.devices[id]; ok {
+			return id, true
+		}
 	}
 	return "", false
 }
 
 // SaveTextMessage 保存短信记录（带设备ID）
 func (dm *DeviceManager) SaveTextMessage(ctx context.Context, deviceID string, msg *models.TextMessage) error {
-	// 可以在消息中标记设备来源
-	// 这里直接使用共享的 textMsgService
+	// 记录消息来源设备，便于多卡场景追溯
+	if deviceID != "" {
+		msg.DeviceID = deviceID
+	}
 	return dm.textMsgService.Save(ctx, msg)
 }

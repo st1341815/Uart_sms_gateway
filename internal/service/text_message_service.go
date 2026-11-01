@@ -108,7 +108,10 @@ func (s *TextMessageService) GetStats(ctx context.Context) (*Stats, error) {
 	}
 
 	// 今日数量（按 created_at 字段）
-	todayStart := time.Now().Truncate(24 * time.Hour).UnixMilli()
+	// 注意：不能用 time.Now().Truncate(24*time.Hour)——那是对 UTC epoch 取整，
+	// 在 UTC+8 下统计的其实是「北京时间 08:00 之后」，每天都会错。
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).UnixMilli()
 	if err := db.Model(&models.TextMessage{}).Where("created_at >= ?", todayStart).Count(&stats.TodayCount).Error; err != nil {
 		return nil, fmt.Errorf("统计今日数量失败: %w", err)
 	}
