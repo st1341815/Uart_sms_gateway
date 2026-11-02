@@ -1,14 +1,31 @@
 # Dockerfile for uart_sms_forwarder-multi
 # 多设备版本 - 简化构建
+#
+# 国内网络注意：默认的 proxy.golang.org / registry.npmjs.org 在部分环境不通
+# （2026-11-03 在部署机上实测：apk 都正常，但 proxy.golang.org 直接 EOF），
+# 所以默认就用国内源，需要时用 build-arg 覆盖：
+#   docker build -f Dockerfile.multi \
+#     --build-arg GOPROXY=https://proxy.golang.org,direct \
+#     --build-arg NPM_REGISTRY=https://registry.npmjs.org \
+#     -t <tag> .
 
 FROM golang:1.25-alpine AS builder
 WORKDIR /build
+
+ARG GOPROXY=https://goproxy.cn,direct
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ENV GOPROXY=${GOPROXY}
+
 # web/assets.go 用 go:embed 嵌的是 web/embed_dir（不是 web/dist！），
 # 所以构建前端后必须把它同步到 embed_dir，否则二进制里打进的是仓库里的旧产物。
-RUN apk add --no-cache git nodejs npm
+RUN apk add --no-cache git nodejs npm \
+ && npm config set registry ${NPM_REGISTRY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# 前端构建 → 强制覆盖 embed_dir。
+# index.css 里已用 @source not 排除 embed_dir/dist，所以构建结果与「仓库里
+# 躺着什么产物」无关，同一份源码在任意机器上产物哈希一致。
 RUN cd web && npm ci && npm run build \
  && rm -rf /build/web/embed_dir && cp -a /build/web/dist /build/web/embed_dir
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
