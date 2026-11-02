@@ -350,6 +350,39 @@ docker build -f Dockerfile.multi -t uart-sms-gateway:latest .
 
 ---
 
+## 安全加固记录（v1.0.1）
+
+第三方安全评估报告的建议**没有照单全收**：核实后成立的问题才修，判断错误的条目没有改
+（改了反而是倒退）。逐条结论与改法见 [`FIXES-2026-11-01.md`](./FIXES-2026-11-01.md) 第六章。
+
+**已修复（真实存在、影响可验证）**
+
+| 级别 | 问题 | 处理 |
+|---|---|---|
+| P0 | `JWT.Secret` 为空时每次启动生成随机 `uuid` —— 而它同时是 AK/SK 密文的派生源，重启一次库里所有 Secret 永久解不开 | 改为生成 32 字节随机密钥落盘（`data/.jwt_secret`，0600）并复用 |
+| P0 | 真实手机号 / 内网 IP / 部署路径进了公开仓库 | 全部替换为示例值 |
+| P1 | JWT 中间件把 `Authorization` 原文写进日志 | 只记泛化原因，不输出任何凭据 |
+| P1 | 登录接口零限流，可无限爆破 | 同 IP+账号 5 次 / 同 IP 跨账号 20 次 → 锁 5 分钟（429 + `Retry-After`） |
+| P1 | 前端构建产物与二进制里的不一致 | Dockerfile / Makefile 强制 `dist → embed_dir`，并做成构建前置依赖 |
+| P2 | 无请求体上限、无读超时 | `BodyLimit 64K`、`ReadHeaderTimeout 10s`、`IdleTimeout 60s` |
+| P2 | 停用 / 不存在 / 签名错 返回不同文案 → 可枚举 AK | 统一「认证失败」 |
+| P2 | CI 只构建镜像、从不跑测试 | 新增 `ci.yml`：`go vet` + `go test` + 前端 lint + build |
+
+**报告里判断错误、因此没有改的**（详见 FIXES 第六章）
+
+- 「帧解析用 `ReadString('\n')`」——那是**上游**的写法，本项目已重写为边界扫描（7 个测试覆盖半包/粘包/正文含换行）。
+- 「SQLite 单写者 = 吞吐瓶颈」——发信速率被限流压到每设备 3 秒 1 条，压力不在库上；真实短板是**单点无 failover**，那是架构问题，不是换个数据库能解决的。
+- 「`web/dist` 入库」——`git ls-files web/dist` 为 0，`.gitignore` 里就有 `dist`；真正入库的是 `web/embed_dir`。
+- 「主密钥来源未交代」——代码首行即写明由 JWT Secret 派生（`SHA256("sms-api-secret-encryption:" + jwtSecret)` → AES-256-GCM）。
+
+**已知残留（需要你决策）**
+
+1. **历史 commit 里还能 `git log -p` 查到原手机号** —— 当前 HEAD 已清理，但历史没重写。彻底清除要 `git filter-repo` + force push（影响所有 clone/fork）。**建议优先级：先换号，再考虑重写历史。**
+2. `Logout` 空实现 —— 改密码后旧 JWT 仍然有效，直到 7 天过期。
+3. Nonce 缓存在内存 —— 重启后 5 分钟窗口内的请求理论上可重放一次（已在代码注释里明示取舍）。
+
+---
+
 ## 致谢与许可
 
 - **上游项目**：[dushixiang/uart_sms_forwarder](https://github.com/dushixiang/uart_sms_forwarder) —— 本项目的根基，串口协议与整体架构均源自于此
