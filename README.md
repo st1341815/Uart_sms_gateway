@@ -12,6 +12,15 @@
 ![Tailwind](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-13uncle%2Fuart__sms__gateway-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/13uncle/uart_sms_gateway)
+[![GHCR](https://img.shields.io/badge/GHCR-st1341815%2Fuart__sms__gateway-181717?logo=github&logoColor=white)](https://github.com/st1341815/Uart_sms_gateway/pkgs/container/uart_sms_gateway)
+
+```bash
+docker pull 13uncle/uart_sms_gateway:latest
+# 或
+docker pull ghcr.io/st1341815/uart_sms_gateway:latest
+```
+
 </div>
 
 ---
@@ -182,9 +191,32 @@ App:
 
 ### 3. 启动
 
+**方式 A：直接用已发布的镜像（推荐）**
+
+镜像在 Docker Hub 和 GHCR 双发布，均为 `linux/amd64` + `linux/arm64` 双架构：
+
+```bash
+# Docker Hub
+docker pull 13uncle/uart_sms_gateway:latest
+
+# 或 GHCR
+docker pull ghcr.io/st1341815/uart_sms_gateway:latest
+```
+
+`docker-compose.yml` 里把 `image:` 换成对应地址后：
+
 ```bash
 docker compose up -d
 curl http://127.0.0.1:8080/health
+```
+
+> 容器内已内置 `config.example.yaml`；首次运行请把 `config.yaml` 挂载进去（`:ro`），
+> 并挂载 `/dev/serial:/dev/serial:ro` 以便解析 `by-path` 符号链接。
+
+**方式 B：本地构建**
+
+```bash
+docker compose -f docker-compose.yml up -d --build
 ```
 
 `docker-compose.yml` 的关键点：`network_mode: host`、`privileged: true`、挂载 `/dev/serial:ro`。

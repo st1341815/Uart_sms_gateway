@@ -51,6 +51,37 @@ X-Api-Key / X-Timestamp / X-Nonce / X-Signature
 - 概览页「设备矩阵」：每张卡独立卡片，显示在线状态、运营商、号码、信号条
 - 参考上游项目设计语言重做，浅色 + 深色侧栏
 
+## Docker 镜像
+
+已发布到 Docker Hub 与 GHCR，均为 **linux/amd64 + linux/arm64** 双架构：
+
+```bash
+# Docker Hub
+docker pull 13uncle/uart_sms_gateway:latest
+docker pull 13uncle/uart_sms_gateway:v1.0.0
+
+# GHCR
+docker pull ghcr.io/st1341815/uart_sms_gateway:latest
+docker pull ghcr.io/st1341815/uart_sms_gateway:v1.0.0
+```
+
+- Docker Hub: https://hub.docker.com/r/13uncle/uart_sms_gateway
+- GHCR: https://github.com/st1341815/Uart_sms_gateway/pkgs/container/uart_sms_gateway
+
+运行（需挂载配置与串口）：
+
+```bash
+docker run -d --name sms-gateway \
+  --privileged --network host \
+  -v $PWD/config.yaml:/app/config.yaml:ro \
+  -v $PWD/data:/app/data \
+  -v $PWD/logs:/app/logs \
+  -v /dev/serial:/dev/serial:ro \
+  13uncle/uart_sms_gateway:v1.0.0
+```
+
+---
+
 ## 技术栈
 
 Go 1.25 · Echo v4 · GORM · SQLite · zap　/　React 19 · TypeScript 5.9 · Vite 7 · Tailwind CSS 4
