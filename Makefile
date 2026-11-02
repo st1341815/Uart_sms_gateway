@@ -1,12 +1,16 @@
-.PHONY: build-web prepare-embed build-server build-servers build-linux build-release clean dev run
+.PHONY: check-version build-web prepare-embed build-server build-servers build-linux build-release clean dev run
 
 # 变量定义
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X github.com/dushixiang/uart_sms_forwarder/internal/version.Version=$(VERSION)
 GOFLAGS := CGO_ENABLED=0
 
+# 检查前后端版本号是否一致（前端 web/src/lib/version.ts、后端 internal/version/version.go）
+check-version:
+	@python3 scripts/check_version.py
+
 # 构建前端
-build-web:
+build-web: check-version
 	@echo "Building web frontend..."
 	cd web && yarn && yarn build
 	@echo "Web frontend built successfully!"
@@ -25,7 +29,7 @@ prepare-embed:
 	fi
 
 # 构建服务端（单平台 - Linux amd64）
-build-server: prepare-embed
+build-server: prepare-embed check-version
 	@echo "Building server for Linux amd64..."
 	@mkdir -p bin
 	$(GOFLAGS) GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/uart_sms_forwarder-linux-amd64 ./cmd/serv
@@ -37,7 +41,7 @@ build-server: prepare-embed
 # ⚠️ 必须依赖 prepare-embed：release.yml 走的就是这个目标，
 #    漏了它 → CI 里 npm run build 产出的 web/dist 没进 embed_dir，
 #    打出来的二进制内嵌的是「仓库里的旧前端」。
-build-servers: prepare-embed
+build-servers: prepare-embed check-version
 	@echo "Building servers for multiple platforms..."
 	@mkdir -p bin
 

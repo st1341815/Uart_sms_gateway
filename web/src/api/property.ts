@@ -50,6 +50,10 @@ export const testNotificationChannel = async (type: string): Promise<{ message: 
     return await apiClient.post<{ message: string }>(`/notifications/${type}/test`);
 };
 
+// 说明：`/api/version` 返回的是后端 `internal/version.Version`，
+// 它只在 make / CI 用 -ldflags 注入时才有真实值，裸 `go build` 打出来是 "dev"。
+// 侧边栏展示的版本号因此改用前端构建期常量（见 `@/lib/version.ts`），
+// 这里保留接口定义仅供调试（例如 curl /api/version 核对部署产物）。
 export interface Version {
     version: string;
 }

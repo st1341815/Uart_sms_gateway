@@ -21,6 +21,9 @@ jobs:
           go-version: '1.25'
           cache: true
 
+      - name: 版本号一致性（前端 APP_VERSION vs 后端 Version 默认值）
+        run: python3 scripts/check_version.py
+
       - name: go vet
         run: go vet ./...
 

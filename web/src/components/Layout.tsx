@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import {useQuery} from '@tanstack/react-query';
 import {toast} from 'sonner';
-import {getVersion} from '@/api/property.ts';
+import {APP_VERSION} from '@/lib/version.ts';
 import {getAllDevicesStatus} from '@/api/serial.ts';
 import type {AllDevicesStatusResponse} from '@/api/types.ts';
 import {cn} from '@/lib/utils.ts';
@@ -35,11 +35,6 @@ export default function Layout() {
     const location = useLocation();
     const navigate = useNavigate();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-    const versionQuery = useQuery({
-        queryKey: ['version'],
-        queryFn: getVersion,
-    });
 
     const {data: devicesResponse} = useQuery<AllDevicesStatusResponse>({
         queryKey: ['allDevicesStatus'],
@@ -173,7 +168,12 @@ export default function Layout() {
                     </div>
                 </div>
                 <div className="flex items-center justify-between px-1">
-                    <span className="text-[10px] text-blue-100/55">{versionQuery.data?.version ? `v${versionQuery.data.version}` : 'DEV'}</span>
+                    <span
+                        className="truncate font-mono text-[10px] tracking-wide text-blue-100/55"
+                        title={`UART SMS Gateway v${APP_VERSION}`}
+                    >
+                        UART SMS Gateway v{APP_VERSION}
+                    </span>
                     <button
                         type="button"
                         onClick={handleLogout}
