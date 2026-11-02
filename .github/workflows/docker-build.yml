@@ -80,9 +80,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE }}
+          # 用 env.VERSION 直接生成 tag：workflow_dispatch 时 github.ref 是分支名，
+          # semver 解析会失败导致只剩 latest，因此这里用 raw 确保版本 tag 始终生成。
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ env.VERSION }}
             type=raw,value=latest
 
       - name: 构建并推送 → GHCR
@@ -104,9 +105,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}
+          # 用 env.VERSION 直接生成 tag：workflow_dispatch 时 github.ref 是分支名，
+          # semver 解析会失败导致只剩 latest，因此这里用 raw 确保版本 tag 始终生成。
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ env.VERSION }}
             type=raw,value=latest
 
       - name: 构建并推送 → Docker Hub
