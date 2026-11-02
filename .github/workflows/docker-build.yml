@@ -14,7 +14,9 @@ env:
   DOCKER_REGISTRY: docker.io
   GHCR_REGISTRY: ghcr.io
   # ⚠️ Docker Hub 仓库名必须全小写，不能用 ${{ github.repository }}（含大写）
-  DOCKER_IMAGE: st1341815/uart_sms_gateway
+  # Docker Hub 的 namespace 是 Docker Hub 账号名（13uncle），与 GitHub 用户名（st1341815）不同
+  DOCKER_IMAGE: 13uncle/uart_sms_gateway
+  # GHCR 的 namespace 是 GitHub 账号名
   GHCR_IMAGE: st1341815/uart_sms_gateway
 
 jobs:
