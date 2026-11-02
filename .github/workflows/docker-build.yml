@@ -3,15 +3,19 @@ name: 构建并发布 Docker 镜像
 on:
   push:
     tags:
-      - 'v*'  # 当推送以 v 开头的 tag 时触发
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要构建的 tag（留空则用当前 ref）'
+        required: false
 
 env:
-  # 使用 docker.io 作为 Docker Hub 的注册表
   DOCKER_REGISTRY: docker.io
-  # 使用 GitHub Container Registry
   GHCR_REGISTRY: ghcr.io
-  # 镜像名称（需要根据实际情况修改）
-  IMAGE_NAME: ${{ github.repository }}
+  # ⚠️ Docker Hub 仓库名必须全小写，不能用 ${{ github.repository }}（含大写）
+  DOCKER_IMAGE: st1341815/uart_sms_gateway
+  GHCR_IMAGE: st1341815/uart_sms_gateway
 
 jobs:
   build-and-push:
@@ -22,120 +26,114 @@ jobs:
       id-token: write
 
     steps:
-      # 获取版本号
       - name: 获取版本号
         id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "VERSION=${{ github.event.inputs.tag }}" >> $GITHUB_ENV
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          fi
 
-      # 检出代码
       - name: 检出代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 安装 make 和 upx
-      - name: 安装 make 和 upx
+      - name: 检查 Docker Hub 凭据是否配置
+        id: check_dockerhub
         run: |
-          sudo apt-get update
-          sudo apt-get install -y make upx-ucl
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_PASSWORD }}" ]; then
+            echo "available=true" >> $GITHUB_OUTPUT
+          else
+            echo "available=false" >> $GITHUB_OUTPUT
+            echo "::notice::未配置 DOCKERHUB_USERNAME / DOCKERHUB_PASSWORD，将只推送到 GHCR"
+          fi
 
-      # 设置 Golang
-      - name: 设置 Golang
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-
-      # 设置 Node.js
-      - name: 设置 Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      # 安装 Yarn
-      - name: 安装 Yarn
-        run: npm install -g yarn
-
-      # 构建前端和服务端
-      - name: 构建前端和 Linux 服务端
-        run: |
-          make build-web
-          make build-linux VERSION=${{ env.VERSION }}
-
-      # 列出编译产物
-      - name: 列出编译产物
-        run: ls -lh ./bin/
-
-      # 设置 QEMU 支持多平台构建
       - name: 设置 QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 设置 Docker Buildx
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 登录 Docker Hub
-      - name: 登录 Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.DOCKER_REGISTRY }}
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-      # 登录 GitHub Container Registry
+      # ---------- GHCR（用自带 GITHUB_TOKEN，无需额外配置）----------
       - name: 登录 GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 提取 Docker 元数据
-      - name: 提取 Docker 元数据
-        id: meta
+      # ---------- Docker Hub（可选）----------
+      - name: 登录 Docker Hub
+        if: steps.check_dockerhub.outputs.available == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: 提取 GHCR 元数据
+        id: meta_ghcr
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
-            ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
             type=raw,value=latest
 
-      # 构建并推送 Docker 镜像
-      - name: 构建并推送 Docker 镜像
-        id: build-and-push
+      - name: 构建并推送 → GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          file: Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ env.VERSION }}
+          file: Dockerfile.multi
+          push: true
+          tags: ${{ steps.meta_ghcr.outputs.tags }}
+          labels: ${{ steps.meta_ghcr.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 生成构建总结
+      # ---------- Docker Hub（可选，凭据缺失时自动跳过）----------
+      - name: 提取 Docker Hub 元数据
+        if: steps.check_dockerhub.outputs.available == 'true'
+        id: meta_dockerhub
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: 构建并推送 → Docker Hub
+        if: steps.check_dockerhub.outputs.available == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          file: Dockerfile.multi
+          push: true
+          tags: ${{ steps.meta_dockerhub.outputs.tags }}
+          labels: ${{ steps.meta_dockerhub.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: 生成构建总结
         run: |
-          echo "## Docker 镜像构建成功 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker 镜像构建完成 🎉" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本:** ${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**版本:** \`${{ env.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**镜像标签:**" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**拉取镜像命令:**" >> $GITHUB_STEP_SUMMARY
+          echo "**拉取命令:**" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "# 或者" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.GHCR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE }}:${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE }}:latest" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check_dockerhub.outputs.available }}" = "true" ]; then
+            echo "docker pull ${{ env.DOCKER_IMAGE }}:${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> Docker Hub 未推送：仓库未配置 \`DOCKERHUB_USERNAME\` / \`DOCKERHUB_PASSWORD\` secrets。" >> $GITHUB_STEP_SUMMARY
+          fi
           echo '```' >> $GITHUB_STEP_SUMMARY
