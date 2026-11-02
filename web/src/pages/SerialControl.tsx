@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import type {ReactNode} from 'react';
 import {Activity, Loader2, MessageSquareText, RadioTower, RotateCcw, Send, Signal, Smartphone} from 'lucide-react';
 import {Link} from 'react-router-dom';
@@ -60,7 +60,8 @@ const signalPercent = (signal?: number) => {
 };
 
 export default function SerialControl() {
-    const [selectedDeviceId, setSelectedDeviceId] = useState('');
+    // 用户手动选择的设备 id；空 = 用默认回落值（见下面的派生逻辑）
+    const [deviceSelection, setDeviceSelection] = useState('');
     const [to, setTo] = useState('');
     const [content, setContent] = useState('');
 
@@ -77,17 +78,20 @@ export default function SerialControl() {
 
     const devices = devicesResponse?.devices ?? [];
 
-    // 默认选中第一台在线设备（没有在线设备则选第一台）
-    useEffect(() => {
-        if (devices.length === 0) {
-            if (selectedDeviceId) setSelectedDeviceId('');
-            return;
-        }
-        if (!devices.some((device) => device.id === selectedDeviceId)) {
-            const firstOnline = devices.find((device) => device.connected);
-            setSelectedDeviceId((firstOnline ?? devices[0]).id);
-        }
-    }, [devices, selectedDeviceId]);
+    // 默认选中第一台在线设备（没有在线设备则选第一台）。
+    //
+    // 这里刻意用「派生值」而不是 useEffect + setState：
+    //   - 用户手动选过（deviceSelection 非空且仍在列表里）→ 用用户的选择
+    //   - 否则回落到第一台在线设备 / 第一台设备
+    // 旧写法在 effect 里同步 setState，react-hooks/set-state-in-effect 会报
+    // 「级联渲染」错误，而且 devices 每次轮询都会换新数组引用，容易反复触发。
+    const preferredId = devices.some((device) => device.id === deviceSelection)
+        ? deviceSelection
+        : '';
+    const selectedDeviceId = preferredId ||
+        (devices.find((device) => device.connected) ?? devices[0])?.id ||
+        '';
+    const setSelectedDeviceId = setDeviceSelection;
 
     const selectedDevice = devices.find((device) => device.id === selectedDeviceId);
     const connected = Boolean(selectedDevice?.connected);

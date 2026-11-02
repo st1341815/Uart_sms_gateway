@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dushixiang/uart_sms_forwarder/config"
 	"github.com/dushixiang/uart_sms_forwarder/internal/handler"
@@ -15,7 +16,6 @@ import (
 	"github.com/dushixiang/uart_sms_forwarder/internal/version"
 	"github.com/dushixiang/uart_sms_forwarder/web"
 	"github.com/go-orz/orz"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
 	"go.uber.org/zap"
@@ -63,6 +63,13 @@ func setup(app *orz.App) error {
 
 	// 3. 设置默认值
 	setDefaultConfig(&appConfig, logger)
+
+	// 3.1 确保 JWT Secret 可用：空/占位/过短时生成一次并落盘复用。
+	//     绝不能随机生成——它同时是 AK/SK 密文的派生源，换一次所有 Secret 全部失效。
+	if err := ensureJWTSecret(&appConfig, logger); err != nil {
+		logger.Error("初始化 JWT Secret 失败", zap.Error(err))
+		return err
+	}
 
 	// 4. 初始化 Repository
 	textMessageRepo := repo.NewTextMessageRepo(db)
@@ -171,10 +178,10 @@ func setup(app *orz.App) error {
 // setDefaultConfig 设置默认配置
 func setDefaultConfig(appConfig *config.AppConfig, logger *zap.Logger) {
 	// JWT 默认值
-	if appConfig.JWT.Secret == "" {
-		appConfig.JWT.Secret = uuid.NewString()
-		logger.Warn("未配置JWT密钥，使用随机UUID")
-	}
+	//
+	// ⚠️ 这里刻意**不再**用随机 UUID 兜底：JWT Secret 同时是 AK/SK 密文的派生源
+	// （service.NewAPIKeyService），每次重启换一个值会让库里所有 SecretEnc 永久解不开。
+	// 空值由 ensureJWTSecret 生成一次并落到 ./data/.jwt_secret 复用。
 	if appConfig.JWT.ExpiresHours == 0 {
 		appConfig.JWT.ExpiresHours = 168 // 7天
 	}
@@ -197,13 +204,26 @@ func autoMigrate(db *gorm.DB) error {
 func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, logger *zap.Logger) {
 	e := app.GetEcho()
 
+	// 请求体上限：本项目所有接口都是小 JSON（发信/模板/配置），
+	// 64 KB 足够；不设限时大 body 会直接吃内存。
+	e.Use(echomiddleware.BodyLimit("64K"))
+
+	// 慢连接防护：只设读头部超时，避免影响正常的响应写出。
+	if e.Server != nil {
+		e.Server.ReadHeaderTimeout = 10 * time.Second
+		e.Server.IdleTimeout = 60 * time.Second
+	}
+
 	e.Use(echomiddleware.StaticWithConfig(echomiddleware.StaticConfig{
 		Skipper: func(c echo.Context) bool {
 			// 不处理接口
 			if strings.HasPrefix(c.Request().RequestURI, "/api") {
 				return true
 			}
-			if strings.HasPrefix(c.Request().RequestURI, "/openapi") {
+			// ⚠️ 这里必须是 "/openapi/"，不能是 "/openapi"：
+			// 前端有个 SPA 路由就叫 /openapi，若把裸路径也跳过静态中间件，
+			// 它就拿不到 index.html 回退，直接 404（原 README 里的「已知问题」）。
+			if strings.HasPrefix(c.Request().RequestURI, "/openapi/") {
 				return true
 			}
 			if strings.HasPrefix(c.Request().RequestURI, "/health") {

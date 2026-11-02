@@ -5,7 +5,6 @@ import type {
     DeviceStatusSummary,
     AllDevicesStatusResponse,
     DevicesListResponse,
-    DeviceStatus 
 } from "./types";
 
 // ===== 发送短信 =====

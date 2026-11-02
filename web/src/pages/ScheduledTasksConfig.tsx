@@ -14,6 +14,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import {getDevicesList} from '../api/serial';
+import {getApiErrorMessage} from '@/lib/api-error';
 import {
     createScheduledTask,
     deleteScheduledTask,
@@ -98,9 +99,9 @@ export default function ScheduledTasksConfig() {
             resetForm();
             toast.success('任务创建成功');
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             console.error('创建任务失败:', error);
-            toast.error(error.response?.data?.error || '创建任务失败');
+            toast.error(getApiErrorMessage(error, '创建任务失败'));
         },
     });
 
@@ -115,9 +116,9 @@ export default function ScheduledTasksConfig() {
             resetForm();
             toast.success('任务更新成功');
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             console.error('更新任务失败:', error);
-            toast.error(error.response?.data?.error || '更新任务失败');
+            toast.error(getApiErrorMessage(error, '更新任务失败'));
         },
     });
 
@@ -128,9 +129,9 @@ export default function ScheduledTasksConfig() {
             queryClient.invalidateQueries({queryKey: ['scheduledTasks']});
             toast.success('任务删除成功');
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             console.error('删除任务失败:', error);
-            toast.error(error.response?.data?.error || '删除任务失败');
+            toast.error(getApiErrorMessage(error, '删除任务失败'));
         },
     });
 
@@ -141,9 +142,9 @@ export default function ScheduledTasksConfig() {
             queryClient.invalidateQueries({queryKey: ['scheduledTasks']});
             toast.success('任务已触发执行');
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             console.error('触发任务失败:', error);
-            toast.error(error.response?.data?.error || '触发任务失败');
+            toast.error(getApiErrorMessage(error, '触发任务失败'));
         },
     });
 
@@ -181,7 +182,7 @@ export default function ScheduledTasksConfig() {
     };
 
     // 更新表单字段
-    const updateFormField = (field: keyof TaskFormData, value: any) => {
+    const updateFormField = (field: keyof TaskFormData, value: TaskFormData[keyof TaskFormData]) => {
         setFormData({
             ...formData,
             [field]: value,

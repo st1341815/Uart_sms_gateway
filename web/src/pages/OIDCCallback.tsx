@@ -1,6 +1,7 @@
 import {useEffect} from 'react';
 import {useNavigate, useSearchParams} from 'react-router-dom';
 import {oidcLogin} from '@/api/auth.ts';
+import {getApiErrorMessage} from '@/lib/api-error';
 import {toast} from 'sonner';
 
 const OIDCCallback = () => {
@@ -40,8 +41,8 @@ const OIDCCallback = () => {
 
                 toast.success('登录成功');
                 navigate('/');
-            } catch (error: any) {
-                toast.error(error.response?.data?.error || 'OIDC 认证失败');
+            } catch (error: unknown) {
+                toast.error(getApiErrorMessage(error, 'OIDC 认证失败'));
                 navigate('/login');
             }
         };

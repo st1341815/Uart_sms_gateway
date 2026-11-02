@@ -30,7 +30,6 @@ import {
     updateKey,
     updateTemplate,
     type APIKey,
-    type SMSTemplate,
 } from '../api/openapi';
 import {getDevicesList} from '../api/serial';
 import {cn} from '@/lib/utils';
@@ -596,7 +595,7 @@ function DocsPanel({keys}: {keys: APIKey[]}) {
     const curlDemo = `#!/bin/bash
 AK="${ak}"
 SK="<你的 SecretKey>"
-URL="http://192.168.11.21:8080/openapi/v1/sms/send"
+URL="http://sms.example.com/openapi/v1/sms/send"
 BODY='{"phone":"13800138000","template":"verify_code","params":{"code":"123456"}}'
 
 TS=$(date +%s)
@@ -619,7 +618,7 @@ curl -sS -X POST "$URL" \\
 
 AK = "${ak}"
 SK = "<你的 SecretKey>"
-BASE = "http://192.168.11.21:8080"
+BASE = "http://sms.example.com"
 
 def send_sms(phone: str, template: str, params: dict) -> dict:
     path = "/openapi/v1/sms/send"
@@ -648,7 +647,7 @@ if __name__ == "__main__":
 
 const AK = '${ak}';
 const SK = '<你的 SecretKey>';
-const BASE = 'http://192.168.11.21:8080';
+const BASE = 'http://sms.example.com';
 
 async function sendSms(phone, template, params) {
   const path = '/openapi/v1/sms/send';

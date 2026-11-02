@@ -73,13 +73,17 @@ export default function Messages() {
     const queryClient = useQueryClient();
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const [selectedPeer, setSelectedPeer] = useState<string | null>(null);
+    // 用户手动点选的会话；为空时回落到第一个会话。
+    // 这样「默认选中第一个会话」就是纯派生计算，不需要在 effect 里 setState
+    // （react-hooks/set-state-in-effect：effect 内同步 setState 会触发级联渲染）。
+    const [peerSelection, setPeerSelection] = useState<string | null>(null);
     const [inputText, setInputText] = useState('');
     // 发送设备（必选）：多卡场景下不能默认，避免从非预期号码（如境外漫游卡）发出
     const [sendDeviceId, setSendDeviceId] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState('');
     const [composeOpen, setComposeOpen] = useState(false);
-    const [composeDeviceId, setComposeDeviceId] = useState('');
+    // 用户手动选择的群发设备；为空时回落到第一台在线设备（同样是派生值）。
+    const [composeDeviceSelection, setComposeDeviceSelection] = useState('');
     const [newRecipient, setNewRecipient] = useState('');
     const [newContent, setNewContent] = useState('');
 
@@ -96,6 +100,13 @@ export default function Messages() {
         queryFn: getConversations,
         refetchInterval: 5000,
     });
+
+    // 以下两个都是「派生值 + 可覆盖」写法，替代原先「effect 里 setState 选默认项」：
+    //   - 用户点选过 → 用用户的选择（哪怕是空）
+    //   - 没点选过 → 回落到第一个会话 / 第一台在线设备
+    // react-hooks/set-state-in-effect 规则认为 effect 内同步 setState 会级联渲染。
+    const selectedPeer = peerSelection ?? conversations[0]?.peer ?? null;
+    const composeDeviceId = composeDeviceSelection || onlineDevices[0]?.id || '';
 
     const {data: currentMessages = []} = useQuery<TextMessage[]>({
         queryKey: ['conversation-messages', selectedPeer],
@@ -121,7 +132,7 @@ export default function Messages() {
         mutationFn: clearMessages,
         onSuccess: () => {
             toast.success('已清空全部短信');
-            setSelectedPeer(null);
+            setPeerSelection(null);
             refreshAll();
         },
         onError: () => toast.error('清空失败'),
@@ -131,7 +142,7 @@ export default function Messages() {
         mutationFn: (peer: string) => deleteConversation(peer),
         onSuccess: (_, peer) => {
             toast.success('会话已删除');
-            if (selectedPeer === peer) setSelectedPeer(null);
+            if (selectedPeer === peer) setPeerSelection(null);
             queryClient.invalidateQueries({queryKey: ['conversations']});
         },
         onError: () => toast.error('删除会话失败'),
@@ -146,23 +157,9 @@ export default function Messages() {
         onError: () => toast.error('删除消息失败'),
     });
 
-    // 默认选中第一个会话
-    useEffect(() => {
-        if (!selectedPeer && conversations.length > 0) {
-            setSelectedPeer(conversations[0].peer);
-        }
-    }, [conversations, selectedPeer]);
-
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({behavior: 'smooth'});
     }, [selectedPeer, currentMessages]);
-
-    // 默认发送设备：第一台在线设备
-    useEffect(() => {
-        if (!composeDeviceId && onlineDevices.length > 0) {
-            setComposeDeviceId(onlineDevices[0].id);
-        }
-    }, [composeDeviceId, onlineDevices]);
 
     const activeConversation = conversations.find((conv) => conv.peer === selectedPeer);
 
@@ -215,7 +212,7 @@ export default function Messages() {
                     setComposeOpen(false);
                     setNewRecipient('');
                     setNewContent('');
-                    setSelectedPeer(recipient);
+                    setPeerSelection(recipient);
                     refreshAll();
                 },
             },
@@ -332,7 +329,7 @@ export default function Messages() {
                                     <button
                                         key={conv.peer}
                                         type="button"
-                                        onClick={() => setSelectedPeer(conv.peer)}
+                                        onClick={() => setPeerSelection(conv.peer)}
                                         className={cn(
                                             'flex w-full items-start gap-2.5 border-l-2 px-4 py-3.5 text-left transition-colors',
                                             active ? 'border-blue-600 bg-blue-50/60' : 'border-transparent hover:bg-slate-50',
@@ -377,7 +374,7 @@ export default function Messages() {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => setSelectedPeer(null)}
+                                        onClick={() => setPeerSelection(null)}
                                         className="-ml-2 text-slate-600 md:hidden"
                                         aria-label="返回会话列表"
                                     >
@@ -564,7 +561,7 @@ export default function Messages() {
                         <div className="space-y-5 py-5">
                             <div className="space-y-1.5">
                                 <label className="block text-sm font-medium text-slate-800">发送设备</label>
-                                <Select value={composeDeviceId} onValueChange={setComposeDeviceId}>
+                                <Select value={composeDeviceId} onValueChange={setComposeDeviceSelection}>
                                     <SelectTrigger className="h-10 w-full border-slate-200 bg-slate-50">
                                         <SelectValue placeholder="选择设备"/>
                                     </SelectTrigger>

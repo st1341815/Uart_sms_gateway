@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/dushixiang/uart_sms_forwarder/internal/service"
 	"github.com/labstack/echo/v4"
@@ -52,10 +54,22 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		})
 	}
 
-	// 使用 AccountService 进行登录
+	// 使用 AccountService 进行登录（clientIP 用于失败限流）
 	ctx := c.Request().Context()
-	loginResp, err := h.accountService.Login(ctx, req.Username, req.Password)
+	loginResp, err := h.accountService.Login(ctx, req.Username, req.Password, c.RealIP())
 	if err != nil {
+		// 被限流：429 + Retry-After，让调用方能区分「密码错」和「打太多次」
+		var throttled *service.ThrottledError
+		if errors.As(err, &throttled) {
+			retry := int(throttled.RetryAfter.Seconds())
+			if retry < 1 {
+				retry = 1
+			}
+			c.Response().Header().Set("Retry-After", strconv.Itoa(retry))
+			return c.JSON(http.StatusTooManyRequests, map[string]string{
+				"error": throttled.Error(),
+			})
+		}
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "用户名或密码错误",
 		})

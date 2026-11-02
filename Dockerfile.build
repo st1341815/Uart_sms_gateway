@@ -3,8 +3,9 @@ FROM golang:1.25-alpine AS backend-builder
 
 WORKDIR /build
 
-# 安装依赖（需要 node 来构建前端，注意：web/assets.go 用 go:embed 引用 web/dist，
-# 前端不构建会导致 go build 失败，所以这里必须真的构建前端）
+# 安装依赖（需要 node 来构建前端）
+# ⚠️ web/assets.go 用 go:embed 嵌的是 web/embed_dir，不是 web/dist。
+#    前端构建完必须同步到 embed_dir，否则镜像里打进的是仓库里的旧前端。
 RUN apk add --no-cache git nodejs npm
 
 # 复制 go 模块文件
@@ -14,11 +15,12 @@ RUN go mod download
 # 复制源代码
 COPY . .
 
-# 构建前端（产物 web/dist 会被 go:embed 打进二进制）
-RUN cd web && npm ci && npm run build
+# 构建前端，并同步到 go:embed 目录
+RUN cd /build/web && npm ci && npm run build \
+ && rm -rf /build/web/embed_dir && cp -a /build/web/dist /build/web/embed_dir
 
 # 编译后端
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
+RUN cd /build && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
 
 # 最终镜像
 FROM alpine:latest

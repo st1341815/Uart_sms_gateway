@@ -269,7 +269,10 @@ func (s *APIKeyService) VerifyRequest(ctx context.Context, ak, signature, timest
 		return nil, fmt.Errorf("认证失败")
 	}
 	if !k.Enabled {
-		return nil, fmt.Errorf("该 AccessKey 已被停用")
+		// 同样返回通用错误：若回「已被停用」，攻击者就能枚举有效 AK。
+		// （真需要排查时就去看服务端日志 / 管理页，别在响应里区分。）
+		s.logger.Warn("已停用的 AccessKey 尝试调用", zap.String("access_key", ak), zap.String("ip", clientIP))
+		return nil, fmt.Errorf("认证失败")
 	}
 
 	// 3. IP 白名单

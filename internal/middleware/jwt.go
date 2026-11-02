@@ -30,7 +30,11 @@ func JWTMiddleware(secret string, logger *zap.Logger) echo.MiddlewareFunc {
 			// 提取 Bearer token
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || parts[0] != "Bearer" {
-				logger.Warn("Authorization header 格式错误", zap.String("header", authHeader))
+				// ⚠️ 绝不打印 header 原文：日志会落盘（logs/sms.log），
+				// 一旦日志被贴到 issue/截图里，等于把有效 token 送人。
+				logger.Warn("Authorization header 格式错误",
+					zap.Int("length", len(authHeader)),
+					zap.String("scheme", parts[0]))
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "认证信息格式错误",
 				})
@@ -41,9 +45,10 @@ func JWTMiddleware(secret string, logger *zap.Logger) echo.MiddlewareFunc {
 			// 验证 token
 			claims, err := util.VerifyToken(tokenString, secret)
 			if err != nil {
-				logger.Warn("token 验证失败", zap.Error(err))
+				// 同理：只记错误类别，不记 token 内容，也不把细节回给客户端
+				logger.Warn("token 验证失败", zap.String("reason", err.Error()))
 				return c.JSON(http.StatusUnauthorized, map[string]string{
-					"error": "认证失败：" + err.Error(),
+					"error": "认证失败",
 				})
 			}
 

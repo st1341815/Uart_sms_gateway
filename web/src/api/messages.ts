@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type {ListResult, Stats, Conversation, TextMessage} from './types';
+import type {Stats, Conversation, TextMessage} from './types';
 
 // 获取统计信息
 export const getStats = (): Promise<Stats> => {

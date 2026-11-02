@@ -57,4 +57,7 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+// 说明：这里只导出 Button 组件。
+// buttonVariants 属于非组件导出，会让 react-refresh 的「只导出组件」规则报错
+// （热更新失效），而项目里没有任何地方直接用它，故不再导出。
+export { Button }

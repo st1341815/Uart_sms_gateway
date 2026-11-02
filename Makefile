@@ -34,7 +34,10 @@ build-server: prepare-embed
 	@ls -lh bin/
 
 # 构建服务端（多平台）
-build-servers:
+# ⚠️ 必须依赖 prepare-embed：release.yml 走的就是这个目标，
+#    漏了它 → CI 里 npm run build 产出的 web/dist 没进 embed_dir，
+#    打出来的二进制内嵌的是「仓库里的旧前端」。
+build-servers: prepare-embed
 	@echo "Building servers for multiple platforms..."
 	@mkdir -p bin
 
@@ -73,7 +76,7 @@ build-servers:
 	@ls -lh bin/
 
 # 构建 Linux 平台（用于 Docker 镜像）
-build-linux:
+build-linux: prepare-embed
 	@echo "Building for Linux platforms (Docker)..."
 	@mkdir -p bin
 

@@ -14,11 +14,13 @@ func NewAccountService(logger *zap.Logger, oidcService *OIDCService, appConfig *
 	jwtSecret := appConfig.JWT.Secret
 	tokenExpireHours := appConfig.JWT.ExpiresHours
 
-	if jwtSecret == "" {
-		logger.Fatal("JWT secret cannot be empty")
-	}
+	// 走到这里 JWT Secret 应已由 internal.ensureJWTSecret 保证（>=32 且非占位值）。
+	// 保留 Fatal 作为最后一道防线：宁可起不来，也不要用可预测的密钥签发 token
+	// ——它同时还是 AK/SK 密文的派生源。
 	if len(jwtSecret) < 32 {
-		logger.Warn("JWT secret is too short, should be at least 32 characters for security")
+		logger.Fatal("JWT secret 未初始化或过短（需 >=32 字符），拒绝启动",
+			zap.Int("length", len(jwtSecret)),
+			zap.String("hint", "openssl rand -base64 32"))
 	}
 	if tokenExpireHours <= 0 {
 		tokenExpireHours = 168 // 默认7天
@@ -29,6 +31,7 @@ func NewAccountService(logger *zap.Logger, oidcService *OIDCService, appConfig *
 		oidcService:      oidcService,
 		jwtSecret:        jwtSecret,
 		tokenExpireHours: tokenExpireHours,
+		loginGuard:       NewLoginGuard(),
 	}
 	return service
 }
@@ -41,6 +44,9 @@ type AccountService struct {
 
 	// credentials 口令存储（数据库），改密码即时生效
 	credentials *CredentialService
+
+	// loginGuard 登录失败限流（进程内存，挡在线爆破）
+	loginGuard *LoginGuard
 }
 
 // SetCredentialService 注入口令服务（在 app 初始化时调用）
@@ -67,12 +73,25 @@ type LoginResponse struct {
 	User      *UserInfo `json:"user"`
 }
 
-// Login 用户登录（Basic Auth）
-func (s *AccountService) Login(ctx context.Context, username, password string) (*LoginResponse, error) {
-	// 使用 Basic Auth 验证
-	if err := s.ValidateCredentials(ctx, username, password); err != nil {
+// Login 用户登录（Basic Auth）。
+// clientIP 用于失败限流：同一 IP+账号 5 次、同一 IP 20 次后锁 5 分钟。
+func (s *AccountService) Login(ctx context.Context, username, password, clientIP string) (*LoginResponse, error) {
+	// 先看是否已被锁定
+	if err := s.loginGuard.Blocked(clientIP, username); err != nil {
+		s.logger.Warn("登录被限流",
+			zap.String("username", username),
+			zap.String("ip", clientIP))
 		return nil, err
 	}
+
+	// 使用 Basic Auth 验证
+	if err := s.ValidateCredentials(ctx, username, password); err != nil {
+		s.loginGuard.Fail(clientIP, username)
+		return nil, err
+	}
+
+	// 登录成功：清空该 IP / 账号的失败计数
+	s.loginGuard.Reset(clientIP, username)
 
 	// 生成 JWT token
 	token, expiresAt, err := s.generateToken(username, username)

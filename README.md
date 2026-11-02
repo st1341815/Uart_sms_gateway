@@ -128,7 +128,19 @@ Signature    = HMAC-SHA256(SecretKey, StringToSign)   // hex 小写
 | 发送状态永久卡 `sending` | 90 秒超时转 `unknown` |
 | MQTT/定时任务随机选卡 | 定时任务 `deviceId` 必填 |
 
-**测试**：33+ 用例覆盖写锁、帧解析、限流、device_id 必填、凭据种子与持久化。
+**测试**：78 个用例覆盖写锁、帧解析、限流、device_id 必填、凭据种子与持久化、AK/SK 签名与防重放、登录限流、JWT 密钥持久化。CI（`.github/workflows/ci.yml`）会跑 `go vet` + `go test` + 前端 `eslint` / `tsc -b && vite build`。
+
+### 🚨 安全基线
+
+| 项 | 现状 |
+|---|---|
+| 容器特权 | 不使用 `privileged`；`devices:` + `/dev/serial:ro` + `no-new-privileges:true` 即可 |
+| JWT 密钥 | 留空则首次启动生成并持久化到 `data/.jwt_secret`（0600）复用；过长/占位值（如 `***REDACTED***`）会拒绝启动。它同时是 AK/SK 密文的派生源，**换钥 = 所有 Secret 失效** |
+| 登录爆破 | 同 IP+账号 5 次、同 IP 跨账号 20 次失败 → 锁 5 分钟，返回 `429` + `Retry-After` |
+| 日志 | 不打印 `Authorization` 头原文、token、口令、短信正文/IMSI/ICCID |
+| 请求体 | 上限 64 KB；`ReadHeaderTimeout` 10s（防慢速头攻击） |
+| AccessKey 探测 | 不存在 / 已停用 / 签名错误 一律返回「认证失败」，不做区分 |
+| 示例配置 | 不含真实号码、内网 IP、部署路径 |
 
 ---
 
@@ -150,17 +162,22 @@ Signature    = HMAC-SHA256(SecretKey, StringToSign)   // hex 小写
 cp config.example.yaml config.yaml
 ```
 
-必改三处：
+必改两处 + 一处可选：
 
 ```yaml
 App:
   JWT:
-    Secret: "<openssl rand -base64 32>"
+    # 可留空：首次启动自动生成 32 字节随机密钥，写到 ./data/.jwt_secret（0600）后复用
+    Secret: ""
   Users:
     admin: "<bcrypt 哈希>"
 log:
   level: info
 ```
+
+> ⚠️ JWT Secret 同时是 AK/SK 密文的加密密钥派生源 —— **换一次，库里所有 AccessKey 的
+> Secret 就再也解不开**（业务方必须逐个重置）。所以：留空让它自动持久化是安全的；
+> 手动填写的话请把 `data/.jwt_secret`（或你自己的密钥）和数据库一起备份。
 
 生成 bcrypt 哈希：
 
@@ -180,7 +197,7 @@ App:
   Serial:
     Devices:
       - ID: "sms1"
-        Name: "联通3113"
+        Name: "卡1"
         Port: "/dev/serial/by-path/pci-0000:07:1b.0-usb-0:2:1.6"
         Description: "中国联通"
         Enabled: true
@@ -219,17 +236,25 @@ curl http://127.0.0.1:8080/health
 docker compose -f docker-compose.yml up -d --build
 ```
 
-`docker-compose.yml` 的关键点：`network_mode: host`、`privileged: true`、挂载 `/dev/serial:ro`。
+`docker-compose.yml` 的关键点：`network_mode: host`（IP 白名单要用真实来源 IP）、`devices:` + 挂载 `/dev/serial:ro`（解析 by-path）、`no-new-privileges:true`。
+**不需要 `privileged: true`** —— 特权模式会把宿主机内核能力整体交出去，而串口访问靠 `devices` 就够。
 
 ### 4. 从源码构建
 
 ```bash
-# 前端（产物需提交到仓库，因为 go:embed 依赖它）
+# 1) 前端
 cd web && npm ci && npm run build
 
-# 后端（-X 注入版本号）
-cd .. && CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/dushixiang/uart_sms_forwarder/internal/version.Version=v1.0.0" -o uart_sms_forwarder ./cmd/serv
+# 2) 同步到 go:embed 目录
+#    ⚠️ web/assets.go 嵌的是 web/embed_dir，不是 web/dist。
+#    漏了这一步，编出来的二进制里是「仓库里的旧前端」。
+cd .. && rm -rf web/embed_dir && cp -a web/dist web/embed_dir
+
+# 3) 后端（-X 注入版本号）
+CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/dushixiang/uart_sms_forwarder/internal/version.Version=v1.0.1" -o uart_sms_forwarder ./cmd/serv
 ```
+
+或者直接 `make build-server`（已把 `prepare-embed` 做成前置依赖，会自动同步）。
 
 或直接用多阶段构建：
 
@@ -316,7 +341,7 @@ docker build -f Dockerfile.multi -t uart-sms-gateway:latest .
 检查三件事：① `config.yaml` 用的是 `by-path`；② compose 挂载了 `/dev/serial:/dev/serial:ro`；③ 宿主机 `ModemManager` 已禁用（会争抢重置 modem）。
 
 **Q：`/openapi` 直接访问 404？**
-已知问题。后端 `/openapi` 路由组优先匹配了裸路径，只能从侧栏进入。`/openapi/v1/*` 接口本身不受影响。
+已修复（v1.0.1）。根因是静态中间件的 `Skipper` 按 `/openapi` 前缀整体放行，把前端 SPA 路由 `/openapi` 也一起跳过了，于是它拿不到 `index.html` 回退。现在只放行 `/openapi/`（带斜杠），裸路径正常回退到前端。
 
 ---
 

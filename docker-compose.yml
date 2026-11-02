@@ -1,18 +1,20 @@
-version: '3.8'
-
 services:
-  # UART SMS Forwarder - 多设备短信转发器
+  # UART SMS Gateway - 多设备短信网关
   #
-  # 与线上实际部署（192.168.11.21:/home/unit3/sms-multi/docker-compose.yml）保持一致：
-  #   - network_mode: host（应用直接监听宿主机 8080，自身就是 HTTP 服务、无 nginx 层）
-  #   - 串口用 by-path 绑定，避免 ttyACM 编号漂移
-  #   - 挂载 /dev/serial 以便容器内解析 by-path 符号链接
+  # 关键点：
+  #   - network_mode: host —— 应用自身就是 HTTP 服务（无 nginx 层），
+  #     且 AK/SK 的 IP 白名单需要真实来源 IP（改 bridge 后容器只能看到 172.x 网关地址）。
+  #   - 串口用 by-path 绑定，避免 ttyACM 编号漂移。
+  #   - 挂载 /dev/serial 以便容器内解析 by-path 符号链接。
+  #   - ⚠️ 不用 privileged:true —— devices + /dev/serial 挂载已经够了，
+  #     特权模式会把宿主机内核能力整体交出去。
   sms-multi:
-    image: smstext-multi-device:latest
+    image: 13uncle/uart_sms_gateway:latest
     container_name: sms-multi
     restart: unless-stopped
-    privileged: true
     network_mode: host
+    security_opt:
+      - no-new-privileges:true
     environment:
       - TZ=Asia/Shanghai
     volumes:

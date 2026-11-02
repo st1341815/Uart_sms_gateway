@@ -65,7 +65,7 @@ func TestFrameReaderStickyPackets(t *testing.T) {
 
 // TestFrameReaderHalfPackets 半包：每次只读 1 字节
 func TestFrameReaderHalfPackets(t *testing.T) {
-	payload := `{"type":"status_response","mobile":{"number":"+8615105513113"}}`
+	payload := `{"type":"status_response","mobile":{"number":"+8613800138000"}}`
 	src := mkFrame(payload)
 	// iotest.OneByteReader 每次只返回 1 字节，模拟极慢的串口
 	r := NewFrameReader(iotest.OneByteReader(strings.NewReader(src)))
