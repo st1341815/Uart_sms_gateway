@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* ⚠️ 排除构建产物目录，否则构建**不可复现**。
+   Tailwind v4 默认按项目目录自动探测要扫描的源码（只跳过 .gitignore 里的路径），
+   而 web/embed_dir 是**入库**的前端产物 —— 于是上一次构建打出来的 bundle 会被
+   当成「源码」再扫一遍，把里面出现过的 class 全部提取出来，结果是：
+     干净目录构建 → CSS 72 KB；仓库带着 embed_dir 构建 → CSS 84 KB。
+   同一份源码在不同机器上产出不同 CSS（且每次构建都在给 CSS 添垃圾），
+   所以这里显式排除 embed_dir 与 dist。 */
+@source not "../embed_dir";
+@source not "../dist";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -256,6 +256,11 @@ CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/dushixiang/uart_sms_forward
 
 或者直接 `make build-server`（已把 `prepare-embed` 做成前置依赖，会自动同步）。
 
+> **构建可复现**：`web/src/index.css` 里用 `@source not` 把 `web/embed_dir`、`web/dist`
+> 排除出 Tailwind 的自动内容扫描。不加这两行的话，上一次构建的 bundle 会被当源码再扫一遍，
+> 同一份源码会产出 72 KB / 84 KB 两种 CSS（而且每次构建都在往 CSS 里添无用 class）。
+> 现在无论目录里有没有 `embed_dir`，`npm run build` 的产物哈希都一致。
+
 或直接用多阶段构建：
 
 ```bash
@@ -288,7 +293,7 @@ docker build -f Dockerfile.multi -t uart-sms-gateway:latest .
 │   │   └── scheduler_service.go  定时任务
 │   ├── models/               数据模型
 │   └── middleware/           JWT
-├── web/                      React 前端（dist 入库供 embed）
+├── web/                      React 前端（embed_dir 入库供 embed）
 ├── main.lua                  固件侧串口协议脚本（来自上游）
 ├── docs/                     文档
 └── scripts/                  数据回填等工具

@@ -32,9 +32,11 @@ func JWTMiddleware(secret string, logger *zap.Logger) echo.MiddlewareFunc {
 			if len(parts) != 2 || parts[0] != "Bearer" {
 				// ⚠️ 绝不打印 header 原文：日志会落盘（logs/sms.log），
 				// 一旦日志被贴到 issue/截图里，等于把有效 token 送人。
+				// scheme 也不直接打（parts[0] 由客户端控制，可塞换行做日志注入），
+				// 只记一个布尔值。
 				logger.Warn("Authorization header 格式错误",
 					zap.Int("length", len(authHeader)),
-					zap.String("scheme", parts[0]))
+					zap.Bool("bearer_scheme", parts[0] == "Bearer"))
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "认证信息格式错误",
 				})
