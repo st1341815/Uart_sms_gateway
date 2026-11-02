@@ -501,7 +501,7 @@ export default function ScheduledTasksConfig() {
                             <select
                                 value={formData.deviceId}
                                 onChange={(e) => updateFormField('deviceId', e.target.value)}
-                                className="w-full h-10 bg-gray-50 border border-gray-200 rounded-lg px-3 text-sm focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none"
+                                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition-colors focus:border-blue-500 focus:bg-white"
                             >
                                 <option value="">请选择设备（必选）</option>
                                 {devices.map((d) => (
@@ -510,7 +510,7 @@ export default function ScheduledTasksConfig() {
                                     </option>
                                 ))}
                             </select>
-                            <p className="text-xs text-amber-600 mt-1.5">
+                            <p className="mt-1.5 text-xs leading-5 text-amber-600">
                                 必须选择：短信只会从所选卡发出，避免误用境外漫游卡产生国际资费。
                             </p>
                         </div>
