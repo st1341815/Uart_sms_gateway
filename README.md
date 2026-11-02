@@ -2,7 +2,7 @@
 
 # UART SMS Gateway
 
-**多设备 UART 短信网关 —— 一个容器管理多张 SIM 卡，内置 AK/SK 开放接口**
+**合宙Air780系列短信网关 —— 一个容器管理多张 SIM 卡，内置 AK/SK 开放接口**
 
 基于 [dushixiang/uart_sms_forwarder](https://github.com/dushixiang/uart_sms_forwarder) 二次开发
 
