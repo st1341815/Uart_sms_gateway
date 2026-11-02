@@ -92,7 +92,7 @@ Signature    = HMAC-SHA256(SecretKey, StringToSign)   // hex 小写
 - **短信模板**：`{code}` 占位符，参数自动解析；模板可单独启停
 - **三层防护**：IP 白名单（CIDR） + 单密钥每分钟限流 + 单设备令牌桶
 - **防重放**：时间戳 5 分钟窗口 + Nonce 去重
-- **调用记录**：手机号与正文**落库即脱敏**（`189****1111`）
+- **调用记录**：手机号与正文**落库即脱敏**
 
 错误码：`UNAUTHORIZED` `INVALID_PHONE` `TEMPLATE_NOT_FOUND` `TEMPLATE_PARAM_MISSING` `PHONE_TOO_FREQUENT` `PHONE_DAILY_LIMIT` `KEY_RATE_LIMIT` `DEVICE_UNAVAILABLE`
 
