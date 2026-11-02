@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -12,15 +13,34 @@ import (
 	"gorm.io/gorm"
 )
 
-// CredentialService 管理管理员口令。
+// dummyHash 用于「用户不存在」分支的等时比较。
 //
-// 为什么不用 config.yaml：
-//   - 容器里 config.yaml 是 **只读挂载**（:ro），程序无法写回；
-//   - 即使可写，改配置文件也无法即时生效（配置在启动时解析完毕）。
-//
-// 因此口令哈希存库（user_credentials 表），config.yaml 里的 Users 只作为
-// **首次启动的种子值**：库里没有对应记录时，用配置里的哈希初始化一次。
-// 之后修改口令只改库，重启后依然有效。
+// 不硬编码任何真实账号的哈希（那会泄露口令指纹进仓库），
+// 而是在进程内按同样 cost 现算一个随机口令的哈希，缓存后复用。
+// 这样既能保持 bcrypt 比较的真实耗时，又不含任何敏感信息。
+var (
+	dummyHashOnce sync.Once
+	dummyHashVal  []byte
+	dummyHashCost = 12
+)
+
+func dummyHash() []byte {
+	dummyHashOnce.Do(func() {
+		// 随机口令本身不参与任何校验，仅用于生成等 cost 的哈希
+		seed, err := bcrypt.GenerateFromPassword(
+			[]byte(fmt.Sprintf("dummy-%d-%d", time.Now().UnixNano(), os.Getpid())),
+			dummyHashCost,
+		)
+		if err != nil {
+			// 极端情况下回退：用零值让比较必然失败，但不会 panic
+			dummyHashVal = []byte("$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv")
+			return
+		}
+		dummyHashVal = seed
+	})
+	return dummyHashVal
+}
+
 type CredentialService struct {
 	logger *zap.Logger
 	db     *gorm.DB
@@ -110,9 +130,11 @@ func (s *CredentialService) Verify(username, password string) error {
 	s.mu.RUnlock()
 
 	if !ok {
-		// 用户不存在时也做一次 bcrypt 比较，避免通过响应时间探测用户是否存在
+		// 用户不存在时也做一次 bcrypt 比较，避免通过响应时间探测用户是否存在。
+		// 这里必须用一个「真实但无关」的哈希：先按 cost=12 现算一次再比对，
+		// 保证耗时与正常分支一致；绝不能硬编码任何真实账号的哈希。
 		_ = bcrypt.CompareHashAndPassword(
-			[]byte("$2a$12$Lorw6FqvntvloQ.TmIzu7OD6UNQZIPv.x4qF5lEY0B/BIlsHTgpUG"),
+			dummyHash(),
 			[]byte(password))
 		return fmt.Errorf("用户名或密码错误")
 	}
