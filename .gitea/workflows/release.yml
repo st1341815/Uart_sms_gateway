@@ -2,22 +2,18 @@ name: Release (Gitea)
 
 # 本地 Gitea 的发版流水线。
 #
-# 触发：推 `v*` tag。做的事：
-#   1. 版本一致性校验（前端 APP_VERSION / 后端 Version / CHANGELOG 三处）
-#   2. 跑单测
-#   3. 前端构建 → 同步到 web/embed_dir
-#   4. 多平台二进制 → 打成发布包
-#   5. 构建多架构镜像（linux/amd64 + linux/arm64）推 Gitea 内置容器仓库
-#   6. 在 Gitea 建 Release 并挂上发布包
+# 触发：推送 v* tag（同时会触发一次 push，日常 CI 见 ci.yml）
+# 产出：
+#   1) 多架构镜像 →  Gitea 内置容器仓库 <gitea>/<owner>/<repo>:<tag> 与 :latest
+#   2) 多平台二进制 → 发布包 uart_sms_forwarder-<tag>-<platform>.tar.gz / .exe.zip
+#   3) Gitea Release（tag）并挂上发布包
 #
-# 与 GitHub 版 workflow 的区别（别把两边写成一样）：
-#   * 镜像仓库换成 Gitea 自带的 <host>/<owner>/<repo>，凭据用内置 GITEA_TOKEN
-#   * Release 用 Gitea 的 API 建（softprops/action-gh-release 依赖 GitHub API，不能用）
-#   * 不依赖 setup-go / setup-node：runner 是宿主 docker，直接用容器镜像跑，
-#     避免每次去 GitHub 下载 toolchain（国内经常超时）
-#
-# ⚠️ 本文件同时被 Gitea 读取（Gitea Actions 兼容 GitHub workflow 语法）。
-#    改它之前先想清楚：GitHub 侧的 release.yml 是独立一份，不要互相覆盖。
+# ⚠️ 刻意不用 actions/checkout / setup-go / setup-node：
+#   act_runner 是「作业容器 + 宿主 dockerd」模式（无 DinD），拉 GitHub 上的
+#   action 要经过 Gitea 的 actions 代理，本机网络下反复 i/o timeout；
+#   setup-go / setup-node 还要从 action 缓存里下 toolchain。
+#   改为：git clone（token 内嵌 URL）+ 直接用 golang / node 官方镜像跑步骤。
+#   纯 shell，无第三方 action，稳定且快。
 
 on:
   push:
@@ -25,112 +21,114 @@ on:
       - 'v*'
 
 env:
-  # Gitea 内置容器仓库：<域名>/<owner>/<repo>
-  IMAGE: ${{ gitea.server_url }}/${{ gitea.repository_owner }}/${{ gitea.repository }}
+  # act_runner 把 /var/run/docker.sock 挂进作业容器，所以 docker CLI 直接可用
+  DOCKER_HOST: unix:///var/run/docker.sock
   GOPROXY: https://goproxy.cn,direct
-  NPM_CONFIG_REGISTRY: https://registry.npmmirror.com
+  NPM_REGISTRY: https://registry.npmmirror.com
+  # 镜像仓库地址 = Gitea 自己的内置 registry
+  IMAGE_REPO: ${{ gitea.server_url }}/${{ gitea.repository }}
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
-    # 整个作业最多 40 分钟（runner 侧 timeout 30m，这里放宽避免被 runner 先砍）
-    timeout-minutes: 40
-
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: 计算版本号
+      - name: 环境检查
         run: |
-          set -eu
-          VERSION="${GITHUB_REF_NAME}"
-          case "$VERSION" in
-            v*) ;;
-            *) echo "::error::tag 必须形如 v1.2.3，实际是 $VERSION"; exit 1 ;;
-          esac
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "版本号：$VERSION"
+          set -e
+          echo "tag      = ${GITHUB_REF#refs/tags/}"
+          echo "repo     = ${GITHUB_REPOSITORY}"
+          echo "server   = ${GITHUB_SERVER_URL}"
+          echo "image    = ${IMAGE_REPO}"
+          echo "workspace= $PWD"
+          docker version --format '  docker {{.Server.Version}}'
+          docker buildx version || true
+          git --version
+          node --version
+          go version || echo "(宿主机无 go，后面都在容器里跑)"
 
-      # ---------- 版本一致性 + 单测（用 golang 镜像，避免 setup-go 下载）----------
-      - name: 版本一致性校验
+      - name: 检出代码（裸 git，不走 action）
         run: |
-          docker run --rm -v "$PWD":/src -w /src python:3.12-slim \
-            python3 scripts/check_version.py
+          set -e
+          git init -q .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          TOKEN="${GITHUB_TOKEN:-${{ secrets.GITEA_TOKEN }}}"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::没有可用的仓库 token，无法 clone"
+            exit 1
+          fi
+          # token 只存在变量与 URL 里，不落盘、不回显
+          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)" \
+              fetch --depth=1 origin "+refs/tags/${GITHUB_REF#refs/tags/}:refs/tags/release"
+          git checkout -q refs/tags/release
+          echo "HEAD = $(git rev-parse --short HEAD)"
+          ls
 
-      - name: go vet + go test
-        run: |
-          docker run --rm -v "$PWD":/src -w /src \
-            -e GOPROXY="$GOPROXY" -e GOCACHE=/tmp/gocache \
-            golang:1.25 sh -c 'go vet ./... && go test ./... -count=1'
+      - name: 版本号一致性
+        run: python3 scripts/check_version.py
 
-      # ---------- 前端构建（用 node 镜像跑 npm ci，比装 yarn 干净）----------
-      - name: 前端构建
+      - name: 构建前端（node 容器）
         run: |
-          set -eu
-          docker run --rm -v "$PWD/web":/w -w /w \
-            -e NPM_CONFIG_REGISTRY="$NPM_CONFIG_REGISTRY" \
-            node:22-bookworm sh -c 'npm ci --no-audit --no-fund && npm run build'
-
-      - name: 同步前端产物到 go:embed 目录
-        run: |
-          set -eu
-          test -f web/dist/index.html || { echo "::error::web/dist 没有产物"; exit 1; }
+          set -e
+          docker run --rm -v "$PWD":/src -w /src/web \
+            -e NPM_REGISTRY="$NPM_REGISTRY" \
+            node:22-bookworm sh -c '
+              set -e
+              npm config set registry "$NPM_REGISTRY"
+              npm ci --no-audit --no-fund
+              npm run build
+            '
           rm -rf web/embed_dir && cp -a web/dist web/embed_dir
-          ls -lh web/embed_dir web/embed_dir/assets
+          echo "前端产物："
+          ls -l web/embed_dir/assets | head
 
-      # ---------- 多平台二进制 + 发布包 ----------
-      - name: 构建多平台二进制并打包
+      - name: 构建多平台二进制与发布包
         run: |
-          set -eu
-          chmod +x scripts/build-release.sh
-          ./scripts/build-release.sh "$VERSION"
+          set -e
+          VERSION="${GITHUB_REF#refs/tags/}"
+          docker run --rm -v "$PWD":/src -w /src \
+            -e VERSION="$VERSION" -e GOPROXY="$GOPROXY" \
+            golang:1.25 sh -c '
+              set -e
+              go mod download
+              ./scripts/build-release.sh "$VERSION"
+            '
+          echo "----- 产物 -----"
           ls -lh dist-release/
-
-      # ---------- 多架构镜像（amd64 + arm64）----------
-      - name: 登录 Gitea 容器仓库
-        run: |
-          set -eu
-          echo "${{ secrets.GITEA_TOKEN }}" \
-            | docker login "${{ gitea.server_url }}" -u "${{ gitea.actor }}" --password-stdin
 
       - name: 构建并推送多架构镜像
         run: |
-          set -eu
-          # act_runner 走宿主 dockerd，buildx 需要显式建一个 driver（默认不存在）
-          docker buildx create --name gitea-builder --driver docker-container --use 2>/dev/null \
-            || docker buildx use gitea-builder
-          docker buildx inspect --bootstrap >/dev/null
+          set -e
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "${{ secrets.GITEA_TOKEN }}" | \
+            docker login "${GITHUB_SERVER_URL#http://}" -u "${GITHUB_REPOSITORY%%/*}" --password-stdin
+          docker buildx create --name relbuilder --use --driver docker-container 2>/dev/null || docker buildx use relbuilder
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             -f Dockerfile.multi \
-            --build-arg GOPROXY="$GOPROXY" \
-            --build-arg NPM_REGISTRY="$NPM_CONFIG_REGISTRY" \
-            -t "$IMAGE:$VERSION" \
-            -t "$IMAGE:latest" \
+            --build-arg "GOPROXY=${GOPROXY}" \
+            --build-arg "NPM_REGISTRY=${NPM_REGISTRY}" \
+            -t "${IMAGE_REPO}:${VERSION}" \
+            -t "${IMAGE_REPO}:latest" \
             --push .
+          echo "镜像已推送：${IMAGE_REPO}:${VERSION}"
 
-      # ---------- 建 Release 并挂发布包 ----------
       - name: 创建 Release 并上传发布包
         run: |
-          set -eu
-          chmod +x scripts/release-gitea.sh
-          ./scripts/release-gitea.sh "$VERSION"
-        env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
-          GITEA_API: ${{ gitea.server_url }}/api/v1
-          GITEA_REPO: ${{ gitea.repository }}
+          set -e
+          VERSION="${GITHUB_REF#refs/tags/}"
+          mkdir -p .release-bin && cp dist-release/* .release-bin/
+          sh scripts/release-gitea.sh "$VERSION" .release-bin
 
       - name: 汇总
-        if: always()
         run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
           {
-            echo "## 发版结果：$VERSION"
+            echo "## 发布完成 $VERSION"
             echo ""
-            echo "| 项 | 值 |"
-            echo "| --- | --- |"
-            echo "| 镜像 | \`$IMAGE:$VERSION\` / \`$IMAGE:latest\` |"
-            echo "| 架构 | linux/amd64, linux/arm64 |"
-            echo "| 发布包 | \`dist-release/\` |"
-          } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            echo "**镜像（amd64 + arm64）**"
+            echo '```'
+            echo "docker pull ${IMAGE_REPO}:${VERSION}"
+            echo '```'
+            echo "**发布包**"
+            ls -lh dist-release/ | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"

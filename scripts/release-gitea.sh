@@ -8,7 +8,7 @@
 #
 # 用法（CI 里由 workflow 调用）：
 #   GITEA_TOKEN=xxx GITEA_API=http://host/api/v1 GITEA_REPO=owner/repo \
-#     ./scripts/release-gitea.sh v1.1.3
+#     ./scripts/release-gitea.sh v1.1.3 [附件目录，默认 dist-release]
 #
 # 幂等：Release 已存在时复用，附件同名先删后传。
 set -eu
@@ -23,7 +23,7 @@ fi
 : "${GITEA_API:?需要 GITEA_API，例如 http://127.0.0.1:3000/api/v1}"
 : "${GITEA_REPO:?需要 GITEA_REPO，例如 st1341815/uart_sms_gateway}"
 
-DIST=dist-release
+DIST="${2:-dist-release}"
 if [ ! -d "$DIST" ]; then
     echo "错误：找不到 $DIST 目录，请先跑 scripts/build-release.sh" >&2
     exit 1

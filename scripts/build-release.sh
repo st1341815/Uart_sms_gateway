@@ -1,112 +1,120 @@
 #!/bin/sh
-# 构建多平台二进制并打成发布包。
+# 构建多平台二进制 + 发布包（Gitea / GitHub 发版共用）
 #
-# 为什么不用 `make build-servers`：
-#   Makefile 里那套依赖 `upx`（压缩）+ `yarn`，CI 容器里都没有，
-#   而 upx 压缩属于「可选的体积优化」，失败也只是 `|| true`。
-#   这里直接用 go build，行为对 CI 更确定；本地想压体积仍可 `make build-servers`。
+# 用法：VERSION=v1.1.3 ./scripts/build-release.sh [版本号]
+# 产物：dist-release/
+#   uart_sms_forwarder-<ver>-linux-amd64.tar.gz   （内含二进制 + config.yaml + README）
+#   uart_sms_forwarder-<ver>-linux-arm64.tar.gz
+#   uart_sms_forwarder-<ver>-linux-armv7.tar.gz
+#   uart_sms_forwarder-<ver>-windows-amd64.zip
+#   uart_sms_forwarder-<ver>-darwin-amd64.tar.gz
+#   uart_sms_forwarder-<ver>-darwin-arm64.tar.gz
+#   SHA256SUMS.txt
 #
-# 用法：./scripts/build-release.sh v1.1.3
-# 产物：dist-release/uart_sms_forwarder-<platform>.tar.gz（Windows 为 .zip）
+# 与 `make build-servers` 的区别（为什么不用它）：
+#   Makefile 那套依赖 upx 压缩和 yarn 构建前端，CI 镜像里不一定有，
+#   而且 upx 只是体积优化、不是功能必需。这里只做「能装能跑」的最小可用包，
+#   前端由调用方提前构建好并同步进 web/embed_dir（见工作流/README）。
+
 set -eu
 
-VERSION="${1:-}"
+VERSION="${1:-${VERSION:-}}"
 if [ -z "$VERSION" ]; then
-    echo "用法：$0 <version，例如 v1.1.3>" >&2
-    exit 1
+    VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 fi
+# tag 形如 v1.1.3 → 二进制里存 1.1.3
+VERSION_NUM="${VERSION#v}"
 
-# 去掉 git tag 的 v 前缀写进二进制，和 Web 侧侧边栏显示的版本号一致
-VER_NUM="${VERSION#v}"
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
 
-GOOS_LIST="linux windows darwin freebsd"
-# 注意：freebsd 只出 amd64；arm64/arm 在 freebsd 上不是本项目目标平台
-PLATFORMS="
-linux/amd64
-linux/arm64
-linux/arm
-windows/amd64
-windows/arm64
-darwin/amd64
-darwin/arm64
-freebsd/amd64
-"
+OUT="$ROOT/dist-release"
+rm -rf "$OUT"
+mkdir -p "$OUT" bin
 
-OUT=dist-release
-BIN_TMP=.release-bin
-rm -rf "$OUT" "$BIN_TMP"
-mkdir -p "$OUT" "$BIN_TMP"
-
-# 前端产物必须先就位（go:embed 引用 web/embed_dir）
 if [ ! -f web/embed_dir/index.html ]; then
-    echo "错误：web/embed_dir/index.html 不存在，请先构建前端" >&2
-    exit 1
+    echo "⚠️  web/embed_dir 不存在，打包出来的二进制只有占位页（后端 API 仍可用）" >&2
 fi
 
-echo "== 构建二进制 $VERSION (VER_NUM=$VER_NUM) =="
-for P in $PLATFORMS; do
-    OS="${P%%/*}"
-    ARCH="${P##*/}"
+LDFLAGS="-s -w -X github.com/dushixiang/uart_sms_forwarder/internal/version.Version=${VERSION_NUM}"
 
-    case "$OS/$ARCH" in
-        linux/arm) GOARM=7 ;;
-        *)         GOARM="" ;;
-    esac
+# 目标平台：OS/ARCH/GOARM/后缀标识
+build_one() {
+    os=$1; arch=$2; goarm=$3; label=$4
+    name="bin/uart_sms_forwarder-${label}"
+    case "$os" in windows) name="${name}.exe" ;; esac
+    echo "→ building ${label}"
+    env CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" ${goarm:+GOARM="$goarm"} \
+        go build -trimpath -ldflags="$LDFLAGS" -o "$name" ./cmd/serv
+}
 
-    NAME="uart_sms_forwarder"
-    [ "$OS" = "windows" ] && NAME="uart_sms_forwarder.exe"
+pack_tar() {
+    label=$1; inner=$2
+    dir="$OUT/uart_sms_forwarder-${VERSION_NUM}-${label}"
+    rm -rf "$dir"; mkdir -p "$dir"
+    cp "bin/$inner" "$dir/uart_sms_forwarder"
+    cp config.example.yaml "$dir/config.yaml"
+    cat > "$dir/README.txt" <<EOF
+UART SMS Gateway ${VERSION_NUM} (${label})
+==========================================
 
-    OUTNAME="uart_sms_forwarder-${OS}-${ARCH}"
-    [ "$OS" = "windows" ] && OUTNAME="${OUTNAME}.exe"
+1. 改 config.yaml：串口设备路径、账号密码、Web 端口。
+   设备路径建议用 by-path（插拔/换口不变），见 config.example.yaml 注释。
+2. 启动：
+     ./uart_sms_forwarder -config config.yaml
+3. 浏览器打开 http://<设备IP>:8080 ，默认账号见 config.yaml 的 auth 段。
+4. 数据落在 ./data/，日志 ./logs/。
 
-    LABEL="$P"
-    [ -n "$GOARM" ] && LABEL="$P (GOARM=$GOARM)"
-    echo "-- $LABEL"
+⚠️ 首次启动会在 data/ 下生成 .jwt_secret（0600）。**这个文件必须跟 data/ 一起备份**——
+   API Key 的 Secret 密文是用它派生的密钥加密的，丢了它，已下发的 SK 就永久解不开。
+   也可以用环境变量 JWT_SECRET_FILE 指定到别处。
+EOF
+    tar -C "$OUT" -czf "$OUT/uart_sms_forwarder-${VERSION_NUM}-${label}.tar.gz" \
+        "uart_sms_forwarder-${VERSION_NUM}-${label}"
+    rm -rf "$dir"
+    echo "  ✓ $(basename "$OUT")/uart_sms_forwarder-${VERSION_NUM}-${label}.tar.gz"
+}
 
-    CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" GOARM="$GOARM" \
-        go build -trimpath -ldflags="-s -w -X github.com/dushixiang/uart_sms_forwarder/internal/version.Version=${VER_NUM}" \
-        -o "${BIN_TMP}/${OUTNAME}" ./cmd/serv
-done
+pack_zip() {
+    label=$1; inner=$2
+    dir="$OUT/uart_sms_forwarder-${VERSION_NUM}-${label}"
+    rm -rf "$dir"; mkdir -p "$dir"
+    cp "bin/$inner" "$dir/uart_sms_forwarder.exe"
+    cp config.example.yaml "$dir/config.yaml"
+    cat > "$dir/README.txt" <<EOF
+UART SMS Gateway ${VERSION_NUM} (${label})
+==========================================
 
-echo "== 打包 =="
-for P in $PLATFORMS; do
-    OS="${P%%/*}"
-    ARCH="${P##*/}"
+1. 改 config.yaml（串口 COM 号、账号密码、端口）。
+2. 在 PowerShell / cmd 里运行：
+     uart_sms_forwarder.exe -config config.yaml
+3. 浏览器打开 http://127.0.0.1:8080
 
-    DIR="uart_sms_forwarder-${OS}-${ARCH}"
-    rm -rf "$DIR"
-    mkdir -p "$DIR"
+⚠️ 首次启动会在 data\\ 下生成 .jwt_secret，**必须跟 data\\ 一起备份**。
+EOF
+    ( cd "$OUT" && zip -qr "uart_sms_forwarder-${VERSION_NUM}-${label}.zip" \
+        "uart_sms_forwarder-${VERSION_NUM}-${label}" )
+    rm -rf "$dir"
+    echo "  ✓ uart_sms_forwarder-${VERSION_NUM}-${label}.zip"
+}
 
-    if [ "$OS" = "windows" ]; then
-        cp "${BIN_TMP}/uart_sms_forwarder-${OS}-${ARCH}.exe" "$DIR/uart_sms_forwarder.exe"
-    else
-        cp "${BIN_TMP}/uart_sms_forwarder-${OS}-${ARCH}" "$DIR/uart_sms_forwarder"
-    fi
+build_one linux  amd64 ""   linux-amd64
+build_one linux  arm64 ""   linux-arm64
+build_one linux  arm   7    linux-armv7
+build_one windows amd64 ""  windows-amd64
+build_one darwin amd64 ""   darwin-amd64
+build_one darwin arm64 ""   darwin-arm64
 
-    cp config.example.yaml "$DIR/config.yaml"
-    [ -f README.md ] && cp README.md "$DIR/README.md"
-    [ -f CHANGELOG.md ] && cp CHANGELOG.md "$DIR/CHANGELOG.md"
+pack_tar linux-amd64   uart_sms_forwarder-linux-amd64
+pack_tar linux-arm64   uart_sms_forwarder-linux-arm64
+pack_tar linux-armv7   uart_sms_forwarder-linux-arm
+pack_tar darwin-amd64  uart_sms_forwarder-darwin-amd64
+pack_tar darwin-arm64  uart_sms_forwarder-darwin-arm64
+pack_zip windows-amd64 uart_sms_forwarder-windows-amd64
 
-    if [ "$OS" = "windows" ]; then
-        # zip 在 CI 镜像里可能没有，用 python 兜底（python3 一定有，check_version 就在用）
-        python3 - "$DIR" "$OUT/${DIR}.zip" <<'PY'
-import os, sys, zipfile
-src, dst = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as z:
-    for root, _, files in os.walk(src):
-        for f in files:
-            p = os.path.join(root, f)
-            z.write(p, os.path.relpath(p, os.path.dirname(src)))
-PY
-    else
-        tar -czf "$OUT/${DIR}.tar.gz" "$DIR"
-    fi
+( cd "$OUT" && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS.txt 2>/dev/null || \
+                 shasum -a 256 ./*.tar.gz ./*.zip > SHA256SUMS.txt )
 
-    rm -rf "$DIR"
-    echo "-- $OUT/${DIR}.*"
-done
-
-rm -rf "$BIN_TMP"
-
-echo "== 完成 =="
+echo
+echo "==== 发布包 ===="
 ls -lh "$OUT"
