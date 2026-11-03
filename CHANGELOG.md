@@ -16,6 +16,27 @@
 
 ---
 
+## [1.1.6] — 2026-11-03
+
+修 1.1.5 引入的「本机号码永远显示 —」：前后端字段命名不一致。
+
+- `fix` 后端 `DeviceStatus` 的 JSON tag 是蛇形（`phone_number` / `is_roaming`），
+  前端类型声明的是驼峰（`phoneNumber` / `isRoaming`），而 `apiClient` 是裸 `fetch`
+  **不做任何字段名转换** → `device.phoneNumber` 永远 `undefined`，界面固定显示「—」。
+  连带 `openPhoneDialog` 预填值也恒为空串，不输内容直接保存会误走「清除补录」分支，
+  表现为「点补录就提示已清除」。
+- `fix` 在 API 层统一映射：`getAllDevicesStatus` / `getDeviceStatus` 把后端原始
+  响应经 `normalizeDeviceStatus` 转成前端驼峰结构；`setDevicePhoneNumber` 的返回值
+  同步兼容 `phone_number` / `phoneNumber` 两种写法。
+  改一处，串口控制 / 短信中心 / 仪表盘三个页面一起生效。
+- `chore` 清空 `properties.device_phone_numbers` 的历史手工补录值：此前补录让
+  sms1 填成了 `+8615505513113`（SIM 实读 `+8615105513113`，`1510` 误打成 `1550`），
+  sms2（O2 UK 境外卡）也被套用了联通号。现在两张卡都回到「SIM 卡自动读取」，
+  读不到时再手工补录。
+- `build` 版本号 bump 至 1.1.6（`web/src/lib/version.ts` + `internal/version/version.go`）。
+
+---
+
 ## [1.1.5] — 2026-11-03
 
 多卡场景两处体验修正：本机号码可读/可补录，短信中心按卡分开看。

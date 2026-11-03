@@ -16,14 +16,49 @@ export const sendSMS = (data: SendSMSRequest) => {
 
 // ===== 设备状态 =====
 
-// 获取所有设备状态（修复：直接返回 res，不需要 res.data）
+// 后端 DeviceStatus 的 JSON tag 是蛇形（phone_number / is_roaming），
+// 而前端类型用的是驼峰，apiClient 是裸 fetch 不做转换 —— 不映射就会「字段永远 undefined」，
+// 表现为本机号码一直显示「—」。所有设备状态入口都必须过这个函数。
+interface RawDeviceStatus {
+    id: string;
+    name: string;
+    port: string;
+    connected: boolean;
+    flymode: boolean;
+    iccid?: string;
+    imsi?: string;
+    operator?: string;
+    phone_number?: string;
+    signal?: number;
+    is_roaming?: boolean;
+}
+
+const normalizeDeviceStatus = (raw: RawDeviceStatus): DeviceStatusSummary => ({
+    id: raw.id,
+    name: raw.name,
+    port: raw.port,
+    connected: raw.connected,
+    flymode: raw.flymode,
+    iccid: raw.iccid,
+    imsi: raw.imsi,
+    operator: raw.operator,
+    // 兼容两种命名：后端若改成驼峰也能跑，不会静默变 undefined
+    phoneNumber: raw.phone_number ?? (raw as unknown as {phoneNumber?: string}).phoneNumber,
+    signal: raw.signal,
+    isRoaming: raw.is_roaming ?? (raw as unknown as {isRoaming?: boolean}).isRoaming,
+});
+
+// 获取所有设备状态
 export const getAllDevicesStatus = async (): Promise<AllDevicesStatusResponse> => {
-    return await apiClient.get<AllDevicesStatusResponse>("/serial/status");
+    const data = await apiClient.get<{ devices: RawDeviceStatus[]; total: number }>("/serial/status");
+    const devices = (data.devices ?? []).map(normalizeDeviceStatus);
+    return { devices, total: data.total ?? devices.length };
 };
 
-// 获取单个设备状态（修复：直接返回 res）
+// 获取单个设备状态
 export const getDeviceStatus = async (deviceId: string): Promise<DeviceStatusSummary> => {
-    return await apiClient.get<DeviceStatusSummary>(`/devices/${deviceId}/status`);
+    const raw = await apiClient.get<RawDeviceStatus>(`/devices/${deviceId}/status`);
+    return normalizeDeviceStatus(raw);
 };
 
 // 获取设备状态（兼容旧 API，返回所有设备或单个）
@@ -49,14 +84,16 @@ export const renameDevice = async (deviceId: string, name: string): Promise<{ id
 
 // 手工设置本机号码（SIM 卡不写 MSISDN 时补录；空串表示清除补录、回退到 SIM 读取值）
 // 纯展示用途，不影响实际收发：收发用的是 SIM 卡本身。
+// 注意接口返回的是蛇形 phone_number，这里转成驼峰给调用方。
 export const setDevicePhoneNumber = async (
     deviceId: string,
     number: string,
 ): Promise<{ id: string; phoneNumber: string }> => {
-    return await apiClient.put<{ id: string; phoneNumber: string }>(
+    const res = await apiClient.put<{ id: string; phone_number?: string; phoneNumber?: string }>(
         `/devices/${deviceId}/phone-number`,
-        {number},
+        { number },
     );
+    return { id: res.id, phoneNumber: res.phone_number ?? res.phoneNumber ?? '' };
 };
 
 // ===== 设备控制 =====
