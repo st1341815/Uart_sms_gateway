@@ -76,6 +76,9 @@ export default function Messages() {
     // 用户手动点选的会话；为空时回落到第一个会话。
     // 这样「默认选中第一个会话」就是纯派生计算，不需要在 effect 里 setState
     // （react-hooks/set-state-in-effect：effect 内同步 setState 会触发级联渲染）。
+    // 会话唯一键 = 设备ID + '\u0000' + 对方号码。
+    // 同一号码可能同时与两张卡有往来，只按号码选会把两条通信线混淆。
+    const convKey = (deviceId: string, peer: string) => `${deviceId}\u0000${peer}`;
     const [peerSelection, setPeerSelection] = useState<string | null>(null);
     const [inputText, setInputText] = useState('');
     // 发送设备（必选）：多卡场景下不能默认，避免从非预期号码（如境外漫游卡）发出
@@ -105,12 +108,22 @@ export default function Messages() {
     //   - 用户点选过 → 用用户的选择（哪怕是空）
     //   - 没点选过 → 回落到第一个会话 / 第一台在线设备
     // react-hooks/set-state-in-effect 规则认为 effect 内同步 setState 会级联渲染。
-    const selectedPeer = peerSelection ?? conversations[0]?.peer ?? null;
+    // 选中的会话用「设备 + 号码」组合键标识；未选时回落到列表第一条。
+    const selectedConvKey = peerSelection
+        ?? (conversations[0] ? convKey(conversations[0].deviceId, conversations[0].peer) : null);
+    const activeConversation = conversations.find(
+        (conv) => convKey(conv.deviceId, conv.peer) === selectedConvKey,
+    ) ?? null;
+    const selectedPeer = activeConversation?.peer ?? null;
+    // 该会话所属的卡：发消息默认从这张卡发出，避免回错卡
+    const selectedConvDeviceId = activeConversation?.deviceId ?? '';
     const composeDeviceId = composeDeviceSelection || onlineDevices[0]?.id || '';
 
     const {data: currentMessages = []} = useQuery<TextMessage[]>({
-        queryKey: ['conversation-messages', selectedPeer],
-        queryFn: () => (selectedPeer ? getConversationMessages(selectedPeer) : Promise.resolve([])),
+        queryKey: ['conversation-messages', selectedConvKey],
+        queryFn: () => (selectedPeer
+            ? getConversationMessages(selectedPeer, selectedConvDeviceId)
+            : Promise.resolve([])),
         enabled: Boolean(selectedPeer),
         refetchInterval: 5000,
     });
@@ -139,10 +152,11 @@ export default function Messages() {
     });
 
     const deleteConversationMutation = useMutation({
-        mutationFn: (peer: string) => deleteConversation(peer),
-        onSuccess: (_, peer) => {
+        // 带 deviceId：只删这张卡与对方的会话，不波及另一张卡的同名会话
+        mutationFn: (target: {peer: string; deviceId: string}) => deleteConversation(target.peer, target.deviceId),
+        onSuccess: (_, target) => {
             toast.success('会话已删除');
-            if (selectedPeer === peer) setPeerSelection(null);
+            if (selectedConvKey === convKey(target.deviceId, target.peer)) setPeerSelection(null);
             queryClient.invalidateQueries({queryKey: ['conversations']});
         },
         onError: () => toast.error('删除会话失败'),
@@ -161,12 +175,36 @@ export default function Messages() {
         messagesEndRef.current?.scrollIntoView({behavior: 'smooth'});
     }, [selectedPeer, currentMessages]);
 
-    const activeConversation = conversations.find((conv) => conv.peer === selectedPeer);
-
+    const keyword = searchQuery.trim().toLowerCase();
     const filteredConversations = conversations.filter((conv) =>
-        conv.peer.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
-        conv.lastMessage.content.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+        conv.peer.toLowerCase().includes(keyword) ||
+        conv.lastMessage.content.toLowerCase().includes(keyword),
     );
+
+    // 按设备分组：conversations 后端已按最后消息时间倒序，
+    // 这里保持组内原有顺序，只把同一张卡的会话聚到一起。
+    // 分组顺序按 devices 的配置顺序（order 已由后端保证），
+    // 未在 devices 里出现的 deviceId（历史数据 / 已删设备）统一落到「其他」。
+    const groupedConversations: {deviceId: string; items: Conversation[]}[] = [];
+    const groupIndex = new Map<string, number>();
+    for (const conv of filteredConversations) {
+        const gid = conv.deviceId || '';
+        let idx = groupIndex.get(gid);
+        if (idx === undefined) {
+            idx = groupedConversations.length;
+            groupIndex.set(gid, idx);
+            groupedConversations.push({deviceId: gid, items: []});
+        }
+        groupedConversations[idx].items.push(conv);
+    }
+    // 按 devices 的配置顺序重排分组（在线与否不影响），未知设备排最后
+    groupedConversations.sort((a, b) => {
+        const ia = devices.findIndex((d) => d.id === a.deviceId);
+        const ib = devices.findIndex((d) => d.id === b.deviceId);
+        const ra = ia === -1 ? Number.MAX_SAFE_INTEGER : ia;
+        const rb = ib === -1 ? Number.MAX_SAFE_INTEGER : ib;
+        return ra - rb;
+    });
 
     const handleSend = (event: React.FormEvent) => {
         event.preventDefault();
@@ -174,14 +212,15 @@ export default function Messages() {
             toast.warning('请输入短信内容');
             return;
         }
-        // 设备必选：短信必须明确从哪张卡发出，避免误用境外漫游卡产生国际资费
-        if (!sendDeviceId) {
+        // 设备必选：短信必须明确从哪张卡发出，避免误用境外漫游卡产生国际资费。
+        // 未手选时回落到当前会话所属的卡（见 effectiveSendDeviceId）。
+        if (!effectiveSendDeviceId) {
             toast.warning('请先选择发送设备');
             return;
         }
-        const device = devices.find((d) => d.id === sendDeviceId);
+        const device = devices.find((d) => d.id === effectiveSendDeviceId);
         sendMutation.mutate(
-            {to: selectedPeer, content: inputText.trim(), device_id: sendDeviceId},
+            {to: selectedPeer, content: inputText.trim(), device_id: effectiveSendDeviceId},
             {
                 onSuccess: () => {
                     setInputText('');
@@ -212,7 +251,8 @@ export default function Messages() {
                     setComposeOpen(false);
                     setNewRecipient('');
                     setNewContent('');
-                    setPeerSelection(recipient);
+                    // 选中「刚发出的那张卡 + 收件人」这条会话
+                    setPeerSelection(convKey(composeDeviceId, recipient));
                     refreshAll();
                 },
             },
@@ -221,8 +261,11 @@ export default function Messages() {
 
     const handleDeleteConversation = () => {
         if (!selectedPeer) return;
-        if (!window.confirm(`确定删除与 ${selectedPeer} 的全部消息吗？此操作不可恢复。`)) return;
-        deleteConversationMutation.mutate(selectedPeer);
+        const cardLabel = selectedConvDeviceId
+            ? (devices.find((d) => d.id === selectedConvDeviceId)?.name || selectedConvDeviceId)
+            : '该设备';
+        if (!window.confirm(`确定删除「${cardLabel}」与 ${selectedPeer} 的全部消息吗？此操作不可恢复。`)) return;
+        deleteConversationMutation.mutate({peer: selectedPeer, deviceId: selectedConvDeviceId});
     };
 
     const handleDeleteMessage = (id: string, event: React.MouseEvent) => {
@@ -245,7 +288,10 @@ export default function Messages() {
         );
     }
 
-    const sendingVia = devices.find((d) => d.id === sendDeviceId);
+    // 实际用于发送的卡：用户手动选过就用他的选择，否则跟随当前会话所属的卡。
+    // 这样「打开哪张卡的会话，回复就从哪张卡发出」，不会因忘选而回错卡。
+    const effectiveSendDeviceId = sendDeviceId || selectedConvDeviceId;
+    const sendingVia = devices.find((d) => d.id === effectiveSendDeviceId);
 
     // 把消息上的 deviceId 渲染成可读名称
     const deviceLabel = (deviceId: string) => {
@@ -323,39 +369,61 @@ export default function Messages() {
                                 <p className="text-xs">{conversations.length === 0 ? '收到或发送第一条短信后会自动创建会话' : '换个关键词试试'}</p>
                             </div>
                         ) : (
-                            filteredConversations.map((conv) => {
-                                const active = selectedPeer === conv.peer;
+                            groupedConversations.map((group) => {
+                                const device = devices.find((d) => d.id === group.deviceId);
                                 return (
-                                    <button
-                                        key={conv.peer}
-                                        type="button"
-                                        onClick={() => setPeerSelection(conv.peer)}
-                                        className={cn(
-                                            'flex w-full items-start gap-2.5 border-l-2 px-4 py-3.5 text-left transition-colors',
-                                            active ? 'border-blue-600 bg-blue-50/60' : 'border-transparent hover:bg-slate-50',
-                                        )}
-                                    >
-                                        <span className={cn(
-                                            'flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
-                                            getAvatarTone(conv.peer),
-                                        )}>
-                                            {conv.peer.slice(-2)}
-                                        </span>
-                                        <span className="min-w-0 flex-1">
-                                            <span className="flex items-baseline justify-between gap-2">
-                                                <span className={cn('truncate text-sm font-semibold', active ? 'text-slate-950' : 'text-slate-700')}>
-                                                    {conv.peer}
-                                                </span>
-                                                <span className="shrink-0 text-[10px] text-slate-400">
-                                                    {formatTime(conv.lastMessage.createdAt)}
-                                                </span>
+                                    <div key={group.deviceId || '__unknown__'}>
+                                        {/* 分组头：这张卡的名称 + 号码，一眼看出是哪个号在收发 */}
+                                        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-slate-100 bg-slate-50/95 px-4 py-2 backdrop-blur">
+                                            <span className="truncate text-[11px] font-bold text-slate-600">
+                                                {group.deviceId ? (device?.name || group.deviceId) : '未标记设备'}
                                             </span>
-                                            <span className="mt-0.5 line-clamp-1 text-xs text-slate-500">
-                                                {conv.lastMessage.type === 'outgoing' && '我: '}
-                                                {conv.lastMessage.content}
-                                            </span>
-                                        </span>
-                                    </button>
+                                            {device?.phoneNumber && (
+                                                <span className="shrink-0 font-mono text-[10px] text-slate-400">
+                                                    {device.phoneNumber}
+                                                </span>
+                                            )}
+                                            {device && !device.connected && (
+                                                <span className="shrink-0 rounded bg-slate-200 px-1 text-[9px] text-slate-500">离线</span>
+                                            )}
+                                            <span className="ml-auto shrink-0 text-[10px] text-slate-400">{group.items.length}</span>
+                                        </div>
+                                        {group.items.map((conv) => {
+                                            const active = selectedConvKey === convKey(conv.deviceId, conv.peer);
+                                            return (
+                                                <button
+                                                    key={convKey(conv.deviceId, conv.peer)}
+                                                    type="button"
+                                                    onClick={() => setPeerSelection(convKey(conv.deviceId, conv.peer))}
+                                                    className={cn(
+                                                        'flex w-full items-start gap-2.5 border-l-2 px-4 py-3.5 text-left transition-colors',
+                                                        active ? 'border-blue-600 bg-blue-50/60' : 'border-transparent hover:bg-slate-50',
+                                                    )}
+                                                >
+                                                    <span className={cn(
+                                                        'flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
+                                                        getAvatarTone(conv.peer),
+                                                    )}>
+                                                        {conv.peer.slice(-2)}
+                                                    </span>
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="flex items-baseline justify-between gap-2">
+                                                            <span className={cn('truncate text-sm font-semibold', active ? 'text-slate-950' : 'text-slate-700')}>
+                                                                {conv.peer}
+                                                            </span>
+                                                            <span className="shrink-0 text-[10px] text-slate-400">
+                                                                {formatTime(conv.lastMessage.createdAt)}
+                                                            </span>
+                                                        </span>
+                                                        <span className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+                                                            {conv.lastMessage.type === 'outgoing' && '我: '}
+                                                            {conv.lastMessage.content}
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 );
                             })
                         )}
@@ -489,14 +557,14 @@ export default function Messages() {
                         <form className="flex gap-3" onSubmit={handleSend}>
                             {/* 发送设备：必选，多卡场景避免从非预期号码发出 */}
                             <select
-                                value={sendDeviceId}
+                                value={effectiveSendDeviceId}
                                 onChange={(event) => setSendDeviceId(event.target.value)}
                                 disabled={sendMutation.isPending}
                                 title="选择从哪张卡发送"
                                 aria-label="发送设备"
                                 className={cn(
                                     'h-10 shrink-0 rounded-lg border px-2 text-sm outline-none transition-colors',
-                                    sendDeviceId
+                                    effectiveSendDeviceId
                                         ? 'border-slate-200 bg-slate-50 text-slate-700 focus:border-blue-500'
                                         : 'border-amber-300 bg-amber-50 text-amber-700',
                                 )}
@@ -516,16 +584,16 @@ export default function Messages() {
                                 placeholder={
                                     !selectedPeer
                                         ? '请先选择会话'
-                                        : !sendDeviceId
+                                        : !effectiveSendDeviceId
                                             ? '请先选择发送设备'
-                                            : `通过 ${sendingVia?.name ?? sendDeviceId} 发送...`
+                                            : `通过 ${sendingVia?.name ?? effectiveSendDeviceId} 发送...`
                                 }
                                 disabled={!selectedPeer || sendMutation.isPending}
                                 className="h-10 flex-1 border-slate-200 bg-slate-50 focus-visible:border-blue-500 focus-visible:bg-white"
                             />
                             <Button
                                 type="submit"
-                                disabled={!selectedPeer || !sendDeviceId || !inputText.trim() || sendMutation.isPending}
+                                disabled={!selectedPeer || !effectiveSendDeviceId || !inputText.trim() || sendMutation.isPending}
                                 className="h-10 bg-[#0b2a55] px-6 text-white hover:bg-slate-800"
                             >
                                 {sendMutation.isPending ? (

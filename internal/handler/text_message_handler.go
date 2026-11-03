@@ -111,9 +111,12 @@ func (h *TextMessageHandler) GetConversationMessages(c echo.Context) error {
 		zap.String("peer_raw", peer),
 		zap.String("peer_decoded", decodedPeer))
 
-	messages, err := h.service.GetConversationMessages(c.Request().Context(), decodedPeer)
+	// device_id 可选：带上是「这张卡与对方的会话」，不带是「所有卡与对方的会话」
+	deviceID := c.QueryParam("device_id")
+
+	messages, err := h.service.GetConversationMessages(c.Request().Context(), decodedPeer, deviceID)
 	if err != nil {
-		h.logger.Error("获取会话消息失败", zap.Error(err), zap.String("peer", decodedPeer))
+		h.logger.Error("获取会话消息失败", zap.Error(err), zap.String("peer", decodedPeer), zap.String("device_id", deviceID))
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "获取会话消息失败",
 		})
@@ -140,12 +143,16 @@ func (h *TextMessageHandler) DeleteConversation(c echo.Context) error {
 		decodedPeer = peer
 	}
 
+	// device_id 可选：带上是「只删这张卡的会话」，不带是「删所有卡与对方的会话」
+	deviceID := c.QueryParam("device_id")
+
 	h.logger.Debug("删除会话",
 		zap.String("peer_raw", peer),
-		zap.String("peer_decoded", decodedPeer))
+		zap.String("peer_decoded", decodedPeer),
+		zap.String("device_id", deviceID))
 
-	if err := h.service.DeleteConversation(c.Request().Context(), decodedPeer); err != nil {
-		h.logger.Error("删除会话失败", zap.Error(err), zap.String("peer", decodedPeer))
+	if err := h.service.DeleteConversation(c.Request().Context(), decodedPeer, deviceID); err != nil {
+		h.logger.Error("删除会话失败", zap.Error(err), zap.String("peer", decodedPeer), zap.String("device_id", deviceID))
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "删除会话失败",
 		})

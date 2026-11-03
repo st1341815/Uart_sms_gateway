@@ -47,6 +47,18 @@ export const renameDevice = async (deviceId: string, name: string): Promise<{ id
     return await apiClient.put<{ id: string; name: string }>(`/devices/${deviceId}/name`, { name });
 };
 
+// 手工设置本机号码（SIM 卡不写 MSISDN 时补录；空串表示清除补录、回退到 SIM 读取值）
+// 纯展示用途，不影响实际收发：收发用的是 SIM 卡本身。
+export const setDevicePhoneNumber = async (
+    deviceId: string,
+    number: string,
+): Promise<{ id: string; phoneNumber: string }> => {
+    return await apiClient.put<{ id: string; phoneNumber: string }>(
+        `/devices/${deviceId}/phone-number`,
+        {number},
+    );
+};
+
 // ===== 设备控制 =====
 
 // 设置飞行模式（支持指定设备）

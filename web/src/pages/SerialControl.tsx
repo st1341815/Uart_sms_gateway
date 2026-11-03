@@ -76,6 +76,11 @@ export default function SerialControl() {
     // 改名弹窗：renameTarget 为 null 表示关闭
     const [renameTarget, setRenameTarget] = useState<{id: string; name: string} | null>(null);
     const [renameValue, setRenameValue] = useState('');
+
+    // 本机号码补录弹窗：境外/漫游卡不写 SIM 卡的 MSISDN 字段，AT+CNUM 必然读不到，
+    // 只能手工补录。phoneTarget 为 null 表示关闭。
+    const [phoneTarget, setPhoneTarget] = useState<{id: string; number: string} | null>(null);
+    const [phoneValue, setPhoneValue] = useState('');
     const queryClient = useQueryClient();
 
     const {
@@ -166,6 +171,38 @@ export default function SerialControl() {
             return;
         }
         renameMutation.mutate({id: renameTarget.id, name: next});
+    };
+
+    // 本机号码补录：国内卡一般能直接读到；境外/漫游卡多数返回空，只能手工填。
+    const phoneMutation = useMutation({
+        mutationFn: ({id, number}: {id: string; number: string}) => serialApi.setDevicePhoneNumber(id, number),
+        onSuccess: async (data) => {
+            toast.success(data.phoneNumber ? `本机号码已设为 ${data.phoneNumber}` : '已清除补录号码，回退到 SIM 卡读取值');
+            setPhoneTarget(null);
+            await queryClient.invalidateQueries({queryKey: ['allDevicesStatus']});
+            await queryClient.invalidateQueries({queryKey: ['devices']});
+        },
+        onError: (error: unknown) => {
+            console.error('设置本机号码失败:', error);
+            toast.error(error instanceof Error ? error.message : '设置本机号码失败');
+        },
+    });
+
+    const openPhoneDialog = (device: {id: string; phoneNumber?: string}) => {
+        setPhoneTarget({id: device.id, number: device.phoneNumber || ''});
+        setPhoneValue(device.phoneNumber || '');
+    };
+
+    const handlePhoneSubmit = (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!phoneTarget) return;
+        const next = phoneValue.trim();
+        // 允许留空提交 = 清除补录
+        if (next === phoneTarget.number) {
+            setPhoneTarget(null);
+            return;
+        }
+        phoneMutation.mutate({id: phoneTarget.id, number: next});
     };
 
     const rebootMutation = useMutation({
@@ -332,11 +369,27 @@ export default function SerialControl() {
                                             value={connected ? selectedDevice.operator || unavailable : unavailable}
                                             tone={connected ? 'blue' : 'slate'}
                                         />
-                                        <StatusTile
-                                            label="本机号码"
-                                            value={connected ? selectedDevice.phoneNumber || unavailable : unavailable}
-                                            tone={connected ? 'blue' : 'slate'}
-                                        />
+                                        {/* 本机号码：可手工补录。
+                                            境外/漫游卡不写 SIM 卡 MSISDN 字段，AT+CNUM 必然读不到，
+                                            只写「读取不到」会让用户以为是坏了，所以直接给补录入口。 */}
+                                        <div className={cn(
+                                            'group/phone relative rounded-xl border px-3.5 py-3',
+                                            connected ? 'border-blue-100 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-600',
+                                        )}>
+                                            <p className="text-[10px] font-semibold tracking-wide opacity-70">本机号码</p>
+                                            <p className="mt-1 truncate text-sm font-bold">
+                                                {connected ? selectedDevice.phoneNumber || unavailable : unavailable}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                title="手工补录本机号码"
+                                                aria-label="手工补录本机号码"
+                                                onClick={() => openPhoneDialog(selectedDevice)}
+                                                className="absolute right-1.5 top-1.5 rounded p-1 text-current opacity-0 transition hover:bg-white/60 focus-visible:opacity-100 group-hover/phone:opacity-60 group-hover/phone:hover:opacity-100"
+                                            >
+                                                <Pencil className="size-3"/>
+                                            </button>
+                                        </div>
                                         <StatusTile
                                             label="信号等级"
                                             value={connected ? `${selectedDevice.signal ?? unavailable}` : unavailable}
@@ -575,6 +628,64 @@ export default function SerialControl() {
                             >
                                 {renameMutation.isPending && <Loader2 className="size-4 animate-spin"/>}
                                 {renameMutation.isPending ? '保存中...' : '保存'}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* 手工补录本机号码（境外/漫游卡不写 SIM 卡 MSISDN，读取必然为空） */}
+            <Dialog
+                open={phoneTarget !== null}
+                onOpenChange={(open) => {
+                    if (!open) setPhoneTarget(null);
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <form onSubmit={handlePhoneSubmit}>
+                        <DialogHeader>
+                            <DialogTitle>本机号码</DialogTitle>
+                            <DialogDescription>
+                                国内运营商的 SIM 卡一般能自动读到号码；境外卡/漫游卡多数不写这个字段，
+                                读取结果会为空，可在这里手工补录。只影响界面显示，不影响实际收发。
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-1.5 py-5">
+                            <label htmlFor="device-phone-number" className="block text-sm font-medium text-slate-800">
+                                号码
+                                <span className="ml-2 font-mono text-[11px] text-slate-400">{phoneTarget?.id}</span>
+                            </label>
+                            <Input
+                                id="device-phone-number"
+                                value={phoneValue}
+                                onChange={(event) => setPhoneValue(event.target.value)}
+                                placeholder="例如：+8613800138000"
+                                maxLength={32}
+                                autoFocus
+                                className="bg-slate-50 focus:bg-white"
+                            />
+                            <p className="text-[11px] text-slate-400">
+                                可含数字、+、-、空格，最多 32 个字符。留空保存＝清除补录，回退到 SIM 卡读取值。
+                            </p>
+                        </div>
+
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setPhoneTarget(null)}
+                                disabled={phoneMutation.isPending}
+                            >
+                                取消
+                            </Button>
+                            <Button
+                                type="submit"
+                                className="bg-blue-600 text-white hover:bg-blue-700"
+                                disabled={phoneMutation.isPending}
+                            >
+                                {phoneMutation.isPending && <Loader2 className="size-4 animate-spin"/>}
+                                {phoneMutation.isPending ? '保存中...' : '保存'}
                             </Button>
                         </DialogFooter>
                     </form>

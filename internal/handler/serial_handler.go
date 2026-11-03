@@ -164,6 +164,46 @@ func (h *SerialHandler) RenameDevice(c echo.Context) error {
 	})
 }
 
+// SetPhoneNumberRequest 修改设备本机号码请求
+type SetPhoneNumberRequest struct {
+	// Number 为空串表示「清除手工补录，回退到 SIM 卡读取值」
+	Number string `json:"number"`
+}
+
+// SetDevicePhoneNumber 手工设置设备本机号码
+//
+// PUT /api/devices/:id/phone-number
+//
+// 背景：Lua 侧 mobile.number(0) 底层是 AT+CNUM，读 SIM 卡 EF_MSISDN 字段。
+// 国内运营商会写，多数境外/漫游卡不写，于是返回空串——不是 bug，改 Lua 也绕不过。
+// 这里提供手工补录，落库到 properties 表，纯展示用途，不影响实际收发。
+func (h *SerialHandler) SetDevicePhoneNumber(c echo.Context) error {
+	deviceID := c.Param("id")
+	if deviceID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "缺少设备 ID"})
+	}
+
+	var req SetPhoneNumberRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "请求参数错误"})
+	}
+
+	number, err := h.deviceManager.SetDevicePhoneNumber(deviceID, req.Number)
+	if err != nil {
+		h.logger.Warn("设置本机号码失败",
+			zap.String("device_id", deviceID),
+			zap.Error(err))
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"message":      "本机号码已更新",
+		"id":           deviceID,
+		"device_id":    deviceID,
+		"phone_number": number,
+	})
+}
+
 // GetDeviceStatus 获取单个设备状态
 // GET /api/devices/:id/status
 func (h *SerialHandler) GetDeviceStatus(c echo.Context) error {

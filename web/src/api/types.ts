@@ -119,6 +119,8 @@ export interface PhoneNumberResponse {
 // 会话信息
 export interface Conversation {
     peer: string;              // 对方号码
+    /** 该会话归属的收发设备（sms1/sms2...）。历史数据（字段引入前）为空串 */
+    deviceId: string;
     lastMessage: TextMessage;  // 最后一条消息
     messageCount: number;      // 消息总数
     unreadCount: number;       // 未读数量

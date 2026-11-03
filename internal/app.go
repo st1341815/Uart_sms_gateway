@@ -294,6 +294,8 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 	// Device API (新增)
 	api.GET("/devices", handlers.Serial.ListDevices)
 	api.PUT("/devices/:id/name", handlers.Serial.RenameDevice) // 修改 SIM 卡显示名称
+	// 手工补录本机号码：境外/漫游卡不写 SIM 卡 MSISDN 字段，读取必然为空
+	api.PUT("/devices/:id/phone-number", handlers.Serial.SetDevicePhoneNumber)
 	api.GET("/devices/:id/status", handlers.Serial.GetDeviceStatus)
 	api.POST("/devices/:id/flymode", handlers.Serial.SetFlymode)
 	api.POST("/devices/:id/reboot", handlers.Serial.RebootMcu)

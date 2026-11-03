@@ -44,10 +44,26 @@ type DeviceManager struct {
 	nameOverrides map[string]string
 	// nameMu 只保护 nameOverrides，避免与 dm.mu 嵌套（GetAllStatus 持 dm.mu 时也要读名字）
 	nameMu sync.RWMutex
+
+	// phoneOverrides 运行时本机号码覆盖层：设备 ID -> 用户手工填写的号码
+	//
+	// 为什么需要它：Lua 侧用 mobile.number(0) 取号，底层是 AT+CNUM（读 SIM 卡
+	// EF_MSISDN 字段）。国内三大运营商会写这个字段，多数境外卡/漫游卡不写，
+	// 于是 number 返回空串——这不是 bug，也无法通过改 Lua 绕过（字段本身是空的）。
+	// 因此提供手工覆盖：DB 覆盖号 > SIM MSISDN。
+	phoneOverrides map[string]string
+	// phoneMu 只保护 phoneOverrides，理由同 nameMu
+	phoneMu sync.RWMutex
 }
 
 // PropertyIDDeviceNames 设备自定义名称的 property 键
 const PropertyIDDeviceNames = "device_names"
+
+// PropertyIDDevicePhoneNumbers 设备本机号码覆盖的 property 键
+//
+// 值是 map[deviceID]phoneNumber。用于境外卡读不到 MSISDN 时手工补录，
+// 让「短信中心按卡分组」有可读的卡标识。
+const PropertyIDDevicePhoneNumbers = "device_phone_numbers"
 
 // DeviceStatus 设备状态摘要
 type DeviceStatus struct {
@@ -81,6 +97,7 @@ func NewDeviceManager(
 		order:           make([]string, 0, len(serialConfig.Devices)),
 		limiters:        newSendRateLimiters(),
 		nameOverrides:   make(map[string]string),
+		phoneOverrides:  make(map[string]string),
 		textMsgService:  textMsgService,
 		notifier:        notifier,
 		propertyService: propertyService,
@@ -177,6 +194,8 @@ func (dm *DeviceManager) Initialize() error {
 
 	// 加载用户自定义的设备名称（DB 覆盖层）
 	dm.loadNameOverridesLocked()
+	// 加载用户手工补录的本机号码（DB 覆盖层）
+	dm.loadPhoneOverridesLocked()
 
 	return nil
 }
@@ -202,6 +221,118 @@ func (dm *DeviceManager) loadNameOverridesLocked() {
 	if len(overrides) > 0 {
 		dm.logger.Info("已加载设备自定义名称", zap.Int("count", len(overrides)))
 	}
+}
+
+// loadPhoneOverridesLocked 从 properties 表加载手工补录的本机号码。
+// 调用方必须已持有 dm.mu 写锁（Initialize 里是这么用的），故这里只碰 phoneMu。
+func (dm *DeviceManager) loadPhoneOverridesLocked() {
+	if dm.propertyService == nil {
+		return
+	}
+
+	overrides := make(map[string]string)
+	if err := dm.propertyService.GetValue(context.Background(), PropertyIDDevicePhoneNumbers, &overrides); err != nil {
+		dm.logger.Warn("加载本机号码覆盖失败，回退到 SIM 卡读取值", zap.Error(err))
+		return
+	}
+
+	dm.phoneMu.Lock()
+	dm.phoneOverrides = overrides
+	dm.phoneMu.Unlock()
+
+	if len(overrides) > 0 {
+		dm.logger.Info("已加载本机号码覆盖", zap.Int("count", len(overrides)))
+	}
+}
+
+// displayPhoneNumber 计算设备的最终本机号码：手工覆盖 > SIM 卡 MSISDN > 空。
+//
+// SIM 卡读不到号码是常态（多数境外/漫游卡不写 EF_MSISDN 字段），
+// 此时返回空串，由调用方或前端决定怎么展示。
+func (dm *DeviceManager) displayPhoneNumber(id, simNumber string) string {
+	dm.phoneMu.RLock()
+	custom, hasCustom := dm.phoneOverrides[id]
+	dm.phoneMu.RUnlock()
+
+	if hasCustom && custom != "" {
+		return custom
+	}
+	return simNumber
+}
+
+// GetDevicePhoneNumber 获取设备的最终本机号码（供 Handler / 短信分组复用）
+func (dm *DeviceManager) GetDevicePhoneNumber(id string) string {
+	dm.mu.RLock()
+	ss, ok := dm.devices[id]
+	dm.mu.RUnlock()
+
+	var simNumber string
+	if ok {
+		if status, err := ss.GetStatus(); err == nil {
+			simNumber = status.Mobile.Number
+		}
+	}
+	return dm.displayPhoneNumber(id, simNumber)
+}
+
+// SetDevicePhoneNumber 手工设置设备本机号码（落库，重启不丢）
+//
+// 用于 SIM 卡不写 MSISDN 字段（境外/漫游卡）时补录；纯展示用途，
+// 不影响实际收发（收发用的是 SIM 卡本身）。
+func (dm *DeviceManager) SetDevicePhoneNumber(id, number string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("必须指定设备 ID")
+	}
+
+	dm.mu.RLock()
+	_, exists := dm.deviceConfig[id]
+	dm.mu.RUnlock()
+	if !exists {
+		return "", fmt.Errorf("设备不存在: %s（可选: %v）", id, dm.GetAllDeviceIDs())
+	}
+
+	number = strings.TrimSpace(number)
+	// 允许空串：表示「清除手工覆盖，回退到 SIM 卡读取值」
+	if number != "" {
+		if utf8.RuneCountInString(number) > 32 {
+			return "", fmt.Errorf("号码过长（最多 32 个字符）")
+		}
+		for _, r := range number {
+			if !(r >= '0' && r <= '9') && r != '+' && r != '-' && r != ' ' {
+				return "", fmt.Errorf("号码只能包含数字、+、- 和空格")
+			}
+		}
+	}
+
+	// 复制一份再改，避免把正在被读的 map 原地写坏
+	dm.phoneMu.Lock()
+	next := make(map[string]string, len(dm.phoneOverrides)+1)
+	for k, v := range dm.phoneOverrides {
+		next[k] = v
+	}
+	if number == "" {
+		delete(next, id)
+	} else {
+		next[id] = number
+	}
+	dm.phoneMu.Unlock()
+
+	if dm.propertyService != nil {
+		if err := dm.propertyService.Set(context.Background(), PropertyIDDevicePhoneNumbers, "设备本机号码覆盖", next); err != nil {
+			return "", fmt.Errorf("保存本机号码失败: %w", err)
+		}
+	}
+
+	// 只有落库成功才更新内存，保证「显示的号码」与「重启后的号码」一致
+	dm.phoneMu.Lock()
+	dm.phoneOverrides = next
+	dm.phoneMu.Unlock()
+
+	dm.logger.Info("设备本机号码已更新",
+		zap.String("id", id),
+		zap.String("number", number))
+
+	return number, nil
 }
 
 // displayName 计算设备的最终显示名：DB 覆盖名 > config.yaml 的 Name > ID。
@@ -371,7 +502,8 @@ func (dm *DeviceManager) GetAllStatus() []*DeviceStatus {
 			ds.ICCID = status.Mobile.Iccid
 			ds.IMSI = status.Mobile.Imsi
 			ds.Operator = status.Mobile.Operator
-			ds.PhoneNumber = status.Mobile.Number
+			// SIM 卡不写 MSISDN 时（境外/漫游卡常见）回退到手工补录的号码
+			ds.PhoneNumber = dm.displayPhoneNumber(id, status.Mobile.Number)
 			ds.Signal = status.Mobile.SignalLevel
 			ds.IsRoaming = status.Mobile.IsRoaming
 		}
@@ -406,7 +538,8 @@ func (dm *DeviceManager) GetDeviceStatus(id string) (*DeviceStatus, error) {
 		ds.ICCID = status.Mobile.Iccid
 		ds.IMSI = status.Mobile.Imsi
 		ds.Operator = status.Mobile.Operator
-		ds.PhoneNumber = status.Mobile.Number
+		// SIM 卡不写 MSISDN 时（境外/漫游卡常见）回退到手工补录的号码
+		ds.PhoneNumber = dm.displayPhoneNumber(id, status.Mobile.Number)
 		ds.Signal = status.Mobile.SignalLevel
 		ds.IsRoaming = status.Mobile.IsRoaming
 	}

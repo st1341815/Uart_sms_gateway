@@ -16,6 +16,40 @@
 
 ---
 
+## [1.1.5] — 2026-11-03
+
+多卡场景两处体验修正：本机号码可读/可补录，短信中心按卡分开看。
+
+**1. 串口控制页的本机号码**
+
+- `feat` 新增 `PUT /api/devices/:id/phone-number`：手工补录本机号码。
+  背景是 `mobile.number(0)` 底层走 AT+CNUM 读 SIM 卡的 EF_MSISDN 字段——
+  国内三大运营商会写，多数境外卡/漫游卡不写，返回空串不是 bug、改 Lua 也绕不过。
+  所以给一条兜底路径：DB 覆盖号 > SIM MSISDN。
+- `feat` 号码存 `properties` 表（`ID = device_phone_numbers`，值 `map[deviceID]number`），
+  启动加载为覆盖层；`GetAllStatus` / `GetDeviceStatus` 都走 `displayPhoneNumber`，
+  保证列表页与详情页一致。校验只允许数字、`+`、`-`、空格，按字符计长 ≤32；
+  提交空串 = 清除补录、回退 SIM 读取值。先落库成功再更新内存，避免「重启后变回空」。
+- `feat` 前端本机号码卡片右上角加铅笔按钮（hover/键盘聚焦显现），弹窗内补录，
+  并 invalidate `allDevicesStatus` / `devices` 让短信中心的卡头一起刷新。
+
+**2. 短信中心按卡分组**
+
+- `feat` `Conversation` 新增 `deviceId`，会话唯一键从「对方号码」改为
+  「设备 + 对方号码」：同一号码可能同时和两张卡有往来，只按号码聚合会把两条
+  独立的通信线搅在一起。
+- `feat` `GET /messages/conversations/:peer/messages` 与
+  `DELETE /messages/conversations/:peer` 支持可选 `device_id`：
+  带上只作用于该卡，不带维持旧行为（所有卡合并 / 全删）。
+- `feat` 前端会话列表按设备分组，组头显示卡名 + 本机号码 + 在线状态 + 会话数，
+  分组顺序跟 `devices` 配置顺序一致，历史数据（`deviceId` 为空）落「未标记设备」。
+- `fix` 发送设备未手选时回落到「当前会话所属的卡」（`effectiveSendDeviceId`）——
+  打开哪张卡的会话、回复就从哪张卡发出，避免忘选而回错卡产生国际资费；
+  手选仍优先，切换会话不会覆盖用户的选择。
+- `build` 版本号 bump 至 1.1.5（`web/src/lib/version.ts` + `internal/version/version.go`）。
+
+---
+
 ## [1.1.4] — 2026-11-03
 
 串口控制页支持修改 SIM 卡名称（界面上显示的「联通3113」这类别名）。

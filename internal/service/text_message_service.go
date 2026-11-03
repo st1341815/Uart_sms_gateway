@@ -37,10 +37,20 @@ type Stats struct {
 
 // Conversation 会话信息
 type Conversation struct {
-	Peer         string              `json:"peer"`         // 对方号码
+	Peer string `json:"peer"` // 对方号码
+	// DeviceID 该会话归属的收发设备（sms1/sms2...）。
+	// 同一号码可能同时与两张卡有往来，因此会话的唯一键是「设备 + 对方号码」，
+	// 前端据此按卡分组展示。历史数据（deviceId 字段引入前）为空串。
+	DeviceID     string              `json:"deviceId"`
 	LastMessage  *models.TextMessage `json:"lastMessage"`  // 最后一条消息
 	MessageCount int64               `json:"messageCount"` // 消息总数
 	UnreadCount  int64               `json:"unreadCount"`  // 未读数量（暂时为0）
+}
+
+// conversationKey 会话分组键：设备 + 对方号码。
+// 用 \x00 分隔，避免号码里出现分隔符导致的键碰撞。
+func conversationKey(deviceID, peer string) string {
+	return deviceID + "\x00" + peer
 }
 
 // Save 保存短信记录
@@ -175,7 +185,9 @@ func (s *TextMessageService) GetConversations(ctx context.Context) ([]*Conversat
 		return nil, fmt.Errorf("获取短信记录失败: %w", err)
 	}
 
-	// 按对方号码分组
+	// 按「设备 + 对方号码」分组：
+	// 同一号码可能同时与两张卡有往来（例如一张国内卡、一张境外卡），
+	// 只按号码聚合会把两条独立的通信线搅在一起，也没法在界面上区分来源卡。
 	conversationMap := make(map[string]*Conversation)
 	for i := range messages {
 		msg := &messages[i]
@@ -192,10 +204,13 @@ func (s *TextMessageService) GetConversations(ctx context.Context) ([]*Conversat
 			continue
 		}
 
+		key := conversationKey(msg.DeviceID, peer)
+
 		// 如果会话不存在，创建新会话
-		if _, exists := conversationMap[peer]; !exists {
-			conversationMap[peer] = &Conversation{
+		if _, exists := conversationMap[key]; !exists {
+			conversationMap[key] = &Conversation{
 				Peer:         peer,
+				DeviceID:     msg.DeviceID,
 				LastMessage:  msg,
 				MessageCount: 0,
 				UnreadCount:  0,
@@ -203,11 +218,11 @@ func (s *TextMessageService) GetConversations(ctx context.Context) ([]*Conversat
 		}
 
 		// 更新消息数量
-		conversationMap[peer].MessageCount++
+		conversationMap[key].MessageCount++
 
 		// 更新最后一条消息（取最新的）
-		if msg.CreatedAt > conversationMap[peer].LastMessage.CreatedAt {
-			conversationMap[peer].LastMessage = msg
+		if msg.CreatedAt > conversationMap[key].LastMessage.CreatedAt {
+			conversationMap[key].LastMessage = msg
 		}
 	}
 
@@ -230,17 +245,25 @@ func (s *TextMessageService) GetConversations(ctx context.Context) ([]*Conversat
 }
 
 // GetConversationMessages 获取指定会话的所有消息
-func (s *TextMessageService) GetConversationMessages(ctx context.Context, peer string) ([]models.TextMessage, error) {
+//
+// deviceID 非空时只返回该设备的消息：同一号码在两张卡上各有会话时，
+// 不带设备过滤会把两条通信线混成一个列表。
+func (s *TextMessageService) GetConversationMessages(ctx context.Context, peer string, deviceID string) ([]models.TextMessage, error) {
 	db := s.repo.GetDB(ctx)
 
 	var messages []models.TextMessage
 
 	// 查询条件：(type=incoming AND from=peer) OR (type=outgoing AND to=peer)
-	if err := db.Where("(type = ? AND \"from\" = ?) OR (type = ? AND \"to\" = ?)",
+	query := db.Where("(type = ? AND \"from\" = ?) OR (type = ? AND \"to\" = ?)",
 		models.MessageTypeIncoming, peer,
 		models.MessageTypeOutgoing, peer,
-	).Order("created_at ASC").Find(&messages).Error; err != nil {
-		s.logger.Error("获取会话消息失败", zap.Error(err), zap.String("peer", peer))
+	)
+	if deviceID != "" {
+		query = query.Where("device_id = ?", deviceID)
+	}
+
+	if err := query.Order("created_at ASC").Find(&messages).Error; err != nil {
+		s.logger.Error("获取会话消息失败", zap.Error(err), zap.String("peer", peer), zap.String("device_id", deviceID))
 		return nil, fmt.Errorf("获取会话消息失败: %w", err)
 	}
 
@@ -248,20 +271,30 @@ func (s *TextMessageService) GetConversationMessages(ctx context.Context, peer s
 }
 
 // DeleteConversation 删除整个会话（与某个联系人的所有消息）
-func (s *TextMessageService) DeleteConversation(ctx context.Context, peer string) error {
+//
+// deviceID 非空时只删该设备的消息，避免误删另一张卡上同名会话。
+func (s *TextMessageService) DeleteConversation(ctx context.Context, peer string, deviceID string) error {
 	db := s.repo.GetDB(ctx)
 
 	// 删除条件：(type=incoming AND from=peer) OR (type=outgoing AND to=peer)
-	result := db.Where("(type = ? AND \"from\" = ?) OR (type = ? AND \"to\" = ?)",
+	query := db.Where("(type = ? AND \"from\" = ?) OR (type = ? AND \"to\" = ?)",
 		models.MessageTypeIncoming, peer,
 		models.MessageTypeOutgoing, peer,
-	).Delete(&models.TextMessage{})
+	)
+	if deviceID != "" {
+		query = query.Where("device_id = ?", deviceID)
+	}
+
+	result := query.Delete(&models.TextMessage{})
 
 	if result.Error != nil {
-		s.logger.Error("删除会话失败", zap.Error(result.Error), zap.String("peer", peer))
+		s.logger.Error("删除会话失败", zap.Error(result.Error), zap.String("peer", peer), zap.String("device_id", deviceID))
 		return fmt.Errorf("删除会话失败: %w", result.Error)
 	}
 
-	s.logger.Info("删除会话成功", zap.String("peer", peer), zap.Int64("deleted_count", result.RowsAffected))
+	s.logger.Info("删除会话成功",
+		zap.String("peer", peer),
+		zap.String("device_id", deviceID),
+		zap.Int64("deleted_count", result.RowsAffected))
 	return nil
 }
