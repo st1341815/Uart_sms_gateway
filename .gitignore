@@ -30,3 +30,5 @@ config.yaml
 #       干净 clone 后必须装 node 才能 go build。
 # 代价：每次改前端都要把 dist 一起提交（仓库多约 600 KB）。
 # 注意：node_modules 仍然忽略，不要提交。
+.release-bin/
+dist-release/
