@@ -1,6 +1,6 @@
 # buildkitd 配置（仅本地 Gitea 发版流水线用）
 #
-# 为什么需要它：act_runner 的作业容器里 Dockfile 的 FROM 是走 buildkit 拉取的，
+# 为什么需要它：act_runner 的作业容器里 Dockerfile 的 FROM 是走 buildkit 拉取的，
 # 而 buildkit 容器（docker-container driver，network=host）直接访问
 # registry-1.docker.io 会 EOF（本机出口被拦）。这里让 docker.io 走国内镜像源。
 #
@@ -8,3 +8,17 @@
 # buildx 是「客户端读取后内嵌」的，所以相对路径即可，不要求宿主路径存在。
 [registry."docker.io"]
   mirrors = ["docker.1ms.run"]
+
+# 本地 Gitea 内置 registry：明文 HTTP，必须显式标 insecure。
+#
+# 2026-11-03 run 97 的报错（换了可达地址之后暴露出来的下一层）：
+#   Head "https://172.20.0.1:3000/v2/...": http: server gave HTTP response
+#   to HTTPS client
+# 即 buildkit 默认按 HTTPS 说话，而 Gitea registry 只监听 HTTP → 必须声明
+# `http = true`，否则它会一直用 TLS 去握手一个纯 HTTP 端口。
+#
+# 地址与 .gitea/workflows/release.yml 的 IMAGE_REPO 保持一致（172.20.0.1:3000，
+# 即 gitea_default 网络的网关）。改一处必须同步改另一处 —— 两边对不上时
+# 表现为「探活通过但 push 报 https/http 不匹配」。
+[registry."172.20.0.1:3000"]
+  http = true
