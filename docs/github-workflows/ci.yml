@@ -1,0 +1,56 @@
+name: CI
+
+# 之前仓库只有「构建并发布 Docker 镜像」，从没跑过 go test / go vet / 前端 lint，
+# 78 个单元测试此前完全靠本地手动执行。这个 workflow 把它们接进 CI。
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: 版本号一致性（前端 APP_VERSION vs 后端 Version 默认值）
+        run: python3 scripts/check_version.py
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -count=1
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: 前端构建（保证 tsc + vite 可过）
+        run: npm run build
