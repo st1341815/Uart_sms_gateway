@@ -10,10 +10,17 @@
 
 ## 为什么从 `.github/workflows/` 挪走
 
-本地 Gitea 的 act_runner **同时**读 `.github/workflows/` 和 `.gitea/workflows/`。
-两套 Release 工作流并存 → 每次推 tag 都跑两遍，而 GitHub 版依赖
-`actions/checkout`，本机 runner 拉不到这个 action（内外网拓扑原因），
-每次都白跑 30 秒超时，把并发为 1 的队列堵住。
+历史原因：v1.1.3 之前这些 workflow 放在 `.github/workflows/`。当时发版走本地
+Gitea + act_runner，而它**同时**读 `.github/workflows/` 和 `.gitea/workflows/`，
+两套 Release 并存 → 每次推 tag 跑两遍；GitHub 版依赖 `actions/checkout`，
+本机 runner 拉不到这个 action（内外网拓扑原因），每次白跑 30 秒超时，
+把并发为 1 的队列堵住。
+
+> **2026-11-03：本地 Gitea 那套流水线已整体移除**（`.gitea/workflows/`、
+> `scripts/release-gitea.sh`、`scripts/ci-make-release.sh`、`docs/gitea-release.md`
+> 全部删除）。原因是 act_runner + buildx + 明文 registry 的组合在本机反复失败，
+> 修到能跑通仍然脆弱。现在发版是「推 master + 推 tag + 手动建 Release」，
+> 详见根目录 `README.md` 第 6 节。
 
 ## 什么时候拷回去
 

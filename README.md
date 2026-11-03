@@ -296,29 +296,36 @@ make version                  # 打印当前版本号
 > 历史教训：1.1.0 之后连续发了 2 个版本忘了改号，Docker 镜像都重建了，
 > 侧边栏还显示 v1.1.0。这就是 `CHANGELOG.md` 和这套检查的由来。
 
-### 6. 发版流程（本地 Gitea，一条命令）
+### 6. 发版流程
 
-现在发版在**本地 Gitea** 上跑：推 `master` + 推 `vX.Y.Z` tag → Actions 自动
-构建镜像（默认 `linux/amd64`，`IMAGE_PLATFORMS` 可切双架构）、多平台发布包、
-并建 Release。GitHub 那条链路已归档（见 `docs/github-workflows/`），默认不再使用。
+发版走 **GitHub**：推 `master` + 推 `vX.Y.Z` tag，然后在 GitHub 上建 Release
+并挂发布包。
 
 ```bash
 make bump-version V=1.2.1        # 改号 + CHANGELOG 插入占位节
 $EDITOR CHANGELOG.md             # 补写这一版改了什么
 git commit -am "chore: 版本号升到 1.2.1"
 
-GITEA_TOKEN=<token> ./scripts/release-gitea.sh   # == 推 master + 推 tag + 等流水线
+git push origin master
+git tag -a v1.2.1 -m "v1.2.1 — <一句话概括>" && git push origin v1.2.1
 ```
 
-产物：
+仓库：<https://github.com/st1341815/Uart_sms_gateway>
 
-| 产物 | 地址 |
-|---|---|
-| 镜像（默认 amd64） | `docker pull 192.168.11.7:3000/st1341815/uart_sms_gateway:1.2.1` |
-| 发布包 | Release 附件（`uart_sms_forwarder-*` + `SHA256SUMS`） |
-| Release 页 | <http://192.168.11.7:3000/st1341815/uart_sms_gateway/releases> |
+本地产出（不经 CI，手工执行）：
 
-完整机制、一次性准备、踩坑与排障见 **[docs/gitea-release.md](docs/gitea-release.md)**。
+```bash
+# 二进制发布包 → dist-release/（含 SHA256SUMS）
+VERSION=v1.2.1 ./scripts/build-release.sh
+
+# 容器镜像（linux/amd64）
+docker build -f Dockerfile.multi --build-arg WEB_PREBUILT=0 -t uart_sms_gateway:1.2.1 .
+```
+
+> 曾经有一套「推 tag → 本地 Gitea Actions 自动出镜像 + 发布包 + Release」的流水线，
+> 2026-11-03 整体移除：act_runner + buildx + 明文 registry 的组合在本机反复失败
+> （先连不上 registry，改地址后撞 https/http 不匹配，换回普通 docker build 才通，
+> 但整条链路仍然脆弱）。需要自动化时再从头设计，别照搬旧配置。
 
 ---
 

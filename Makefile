@@ -47,9 +47,8 @@ build-server: prepare-embed check-version
 	@ls -lh bin/
 
 # 构建服务端（多平台）
-# ⚠️ 必须依赖 prepare-embed：release.yml 走的就是这个目标，
-#    漏了它 → CI 里 npm run build 产出的 web/dist 没进 embed_dir，
-#    打出来的二进制内嵌的是「仓库里的旧前端」。
+# ⚠️ 必须依赖 prepare-embed：漏了它 → npm run build 产出的 web/dist
+#    没进 embed_dir，打出来的二进制内嵌的是「仓库里的旧前端」。
 build-servers: prepare-embed check-version
 	@echo "Building servers for multiple platforms..."
 	@mkdir -p bin

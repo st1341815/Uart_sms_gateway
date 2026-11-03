@@ -1,5 +1,5 @@
 #!/bin/sh
-# 构建多平台二进制 + 发布包（Gitea / GitHub 发版共用）
+# 构建二进制 + 发布包（GitHub 发版用；当前只出 linux/amd64）
 #
 # 用法：VERSION=v1.1.3 ./scripts/build-release.sh [版本号]
 # 产物：dist-release/

@@ -1,14 +1,10 @@
 # Dockerfile for uart_sms_forwarder-multi
 # 多设备版本 - 简化构建
 #
-# ⚠️ 前端只构建一次（2026-11-03 优化）
-#   CI（.gitea/workflows/release.yml）已经用 node 容器产出 web/dist 并同步到
-#   web/embed_dir。本 Dockerfile 默认（WEB_PREBUILT=1）直接使用这份产物，
-#   容器内不再 `apk add git nodejs npm` + `npm ci`。
-#
-#   为什么改：多架构 buildx 里 arm64 走 QEMU 模拟，容器内 apk add + npm ci
-#   是整个流水线最慢的一段（实测十几分钟卡在 `apk add git nodejs npm`），
-#   而 CI 已有等价产物 → 纯重复劳动。
+# ⚠️ 前端可以选择预构建
+#   WEB_PREBUILT=1（默认）：直接用仓库里的 web/embed_dir，容器内不装 node。
+#                           适用于调用方已经跑过 `npm run build` 并同步了产物。
+#   WEB_PREBUILT=0          ：容器内 apk add nodejs/npm + npm ci + build。
 #
 #   本地直接构建（没有预构建产物）时显式关掉：
 #     docker build -f Dockerfile.multi --build-arg WEB_PREBUILT=0 -t <tag> .
