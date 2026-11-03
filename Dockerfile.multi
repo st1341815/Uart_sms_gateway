@@ -1,9 +1,21 @@
 # Dockerfile for uart_sms_forwarder-multi
 # 多设备版本 - 简化构建
 #
+# ⚠️ 前端只构建一次（2026-11-03 优化）
+#   CI（.gitea/workflows/release.yml）已经用 node 容器产出 web/dist 并同步到
+#   web/embed_dir。本 Dockerfile 默认（WEB_PREBUILT=1）直接使用这份产物，
+#   容器内不再 `apk add git nodejs npm` + `npm ci`。
+#
+#   为什么改：多架构 buildx 里 arm64 走 QEMU 模拟，容器内 apk add + npm ci
+#   是整个流水线最慢的一段（实测十几分钟卡在 `apk add git nodejs npm`），
+#   而 CI 已有等价产物 → 纯重复劳动。
+#
+#   本地直接构建（没有预构建产物）时显式关掉：
+#     docker build -f Dockerfile.multi --build-arg WEB_PREBUILT=0 -t <tag> .
+#
 # 国内网络注意：默认的 proxy.golang.org / registry.npmjs.org 在部分环境不通
-# （2026-11-03 在部署机上实测：apk 都正常，但 proxy.golang.org 直接 EOF），
-# 所以默认就用国内源，需要时用 build-arg 覆盖：
+# （2026-11-03 在部署机上实测：proxy.golang.org 直接 EOF），所以默认用国内源，
+# 需要时用 build-arg 覆盖：
 #   docker build -f Dockerfile.multi \
 #     --build-arg GOPROXY=https://proxy.golang.org,direct \
 #     --build-arg NPM_REGISTRY=https://registry.npmjs.org \
@@ -14,20 +26,30 @@ WORKDIR /build
 
 ARG GOPROXY=https://goproxy.cn,direct
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+# 1 = 使用调用方已构建好的 web/embed_dir（CI 路径，快）
+# 0 = 在容器内 apk add nodejs/npm 并构建前端（本地路径，慢）
+ARG WEB_PREBUILT=1
 ENV GOPROXY=${GOPROXY}
 
-# web/assets.go 用 go:embed 嵌的是 web/embed_dir（不是 web/dist！），
-# 所以构建前端后必须把它同步到 embed_dir，否则二进制里打进的是仓库里的旧产物。
-RUN apk add --no-cache git nodejs npm \
- && npm config set registry ${NPM_REGISTRY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# 前端构建 → 强制覆盖 embed_dir。
-# index.css 里已用 @source not 排除 embed_dir/dist，所以构建结果与「仓库里
-# 躺着什么产物」无关，同一份源码在任意机器上产物哈希一致。
-RUN cd web && npm ci && npm run build \
- && rm -rf /build/web/embed_dir && cp -a /build/web/dist /build/web/embed_dir
+
+# web/assets.go 用 go:embed 嵌的是 web/embed_dir（不是 web/dist！），
+# 所以无论哪种路径，构建结束后 embed_dir 都必须是「最新产物」。
+RUN set -e; \
+    if [ "$WEB_PREBUILT" = "1" ]; then \
+        test -f /build/web/embed_dir/index.html || { \
+            echo "::error::WEB_PREBUILT=1 但 web/embed_dir/index.html 不存在（CI 应先生成前端产物）"; exit 1; }; \
+        echo "→ 使用预构建前端 web/embed_dir（跳过容器内 npm 构建）"; \
+    else \
+        echo "→ 容器内构建前端（WEB_PREBUILT=0）"; \
+        apk add --no-cache git nodejs npm; \
+        npm config set registry "$NPM_REGISTRY"; \
+        cd /build/web && npm ci && npm run build; \
+        rm -rf /build/web/embed_dir && cp -a /build/web/dist /build/web/embed_dir; \
+    fi
+
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
 
 FROM alpine:latest

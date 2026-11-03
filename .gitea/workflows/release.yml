@@ -4,8 +4,11 @@ name: Release (Gitea)
 #
 # 触发：推送 v* tag
 # 产出：
-#   1) 多架构镜像（linux/amd64 + linux/arm64）→ Gitea 内置容器仓库
+#   1) 容器镜像（默认仅 linux/amd64）→ Gitea 内置容器仓库
+#      需要 arm64 时把 env.IMAGE_PLATFORMS 改成 linux/amd64,linux/arm64
+#      （代价很大：arm64 阶段走 QEMU 模拟，首次构建可能几十分钟）
 #   2) 多平台二进制发布包 → dist-release/*.tar.gz / *.exe.zip + SHA256SUMS
+#      （二进制不看架构限制：Go 交叉编译，amd64/arm64 都有）
 #   3) Gitea Release（tag）并挂上发布包
 #
 # ⚠️ 刻意不用 actions/checkout / setup-go / setup-node：
@@ -32,6 +35,12 @@ env:
   # 用户侧 192.168.11.7 指向同一个镜像仓库。
   IMAGE_REPO: 127.0.0.1:3000/st1341815/uart_sms_gateway
   IMAGE_HINT: 192.168.11.7:3000/st1341815/uart_sms_gateway
+  # 镜像目标架构。默认只出 amd64：
+  #   2026-11-03 实测，多架构（+linux/arm64）会让 arm64 阶段在 QEMU 下跑完
+  #   整个 builder（go build + 前端），耗时是纯 amd64 的数倍；而当前部署目标
+  #   （飞牛 NAS / x86 服务器）都是 amd64，arm64 用户还有二进制发布包可用。
+  # 确实需要多架构时改成：linux/amd64,linux/arm64
+  IMAGE_PLATFORMS: linux/amd64
   # GITEA_API 在「解析宿主地址」步骤里运行时探测后注入（见该步骤注释）
 
 jobs:
@@ -186,7 +195,7 @@ jobs:
           fi
           ls -lh dist-release/
 
-      - name: 构建并推送多架构镜像
+      - name: 构建并推送镜像
         run: |
           set -e
           VERSION="${GITHUB_REF#refs/tags/}"
@@ -201,21 +210,42 @@ jobs:
             > "$HOME/.docker/config.json"
           chmod 600 "$HOME/.docker/config.json"
 
-          # docker-container driver + network=host：多架构必需（dockerd 的 docker
-          # driver 不支持 manifest list），host 网络才能解析 127.0.0.1:3000。
+          # docker-container driver + network=host：manifest list 必需（dockerd 的
+          # docker driver 不支持多平台 manifest），host 网络才能解析 127.0.0.1:3000。
           # buildkitd.toml 让 buildkit 的 docker.io 走国内镜像源（直连会 EOF）。
-          docker buildx rm gitea-builder >/dev/null 2>&1 || true
-          docker buildx create --name gitea-builder \
-            --driver docker-container \
-            --driver-opt network=host \
-            --buildkitd-config scripts/buildkitd.toml
+          #
+          # ⚠️ 只有 builder 不存在时才 create。以前每次都 rm + create，
+          #    等于每次发版都把 buildkit 的层缓存/thx 缓存全丢掉，白跑一遍
+          #    go mod download 和编译（2026-11-03 实测这是次要慢因）。
+          # 注意：act_runner 每个作业都是新容器，~/.docker/buildx 里的 builder
+          # 注册记录不持久；但 buildkit 的缓存卷（buildx_buildkit_gitea-builder0_state）
+          # 在宿主上，删容器不删卷 → 重新 create 会自动挂回同名卷，缓存仍在。
+          create_builder() {
+            docker buildx create --name gitea-builder \
+              --driver docker-container \
+              --driver-opt network=host \
+              --buildkitd-config scripts/buildkitd.toml
+          }
+          if docker buildx inspect gitea-builder >/dev/null 2>&1; then
+            echo "复用已有 builder 注册: gitea-builder"
+          else
+            # 注册记录丢了但 buildkit 容器可能还在（同名容器会让 create 报错）
+            # → 先删容器（保留 *_state 卷，缓存不丢）再重建
+            create_builder || {
+              echo "create 报错（大概率残留同名容器），清理后重试"
+              docker rm -f buildx_buildkit_gitea-builder0 >/dev/null 2>&1 || true
+              create_builder
+            }
+          fi
           docker buildx use gitea-builder
 
+          echo "目标平台 = ${IMAGE_PLATFORMS}"
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform "${IMAGE_PLATFORMS}" \
             -f Dockerfile.multi \
             --build-arg "GOPROXY=${GOPROXY}" \
             --build-arg "NPM_REGISTRY=${NPM_REGISTRY}" \
+            --build-arg "WEB_PREBUILT=1" \
             -t "${IMAGE_REPO}:${VERSION}" \
             -t "${IMAGE_REPO}:latest" \
             --push .
@@ -239,7 +269,7 @@ jobs:
           {
             echo "## 发布完成 ${VERSION}"
             echo ""
-            echo "**镜像（linux/amd64 + linux/arm64）**"
+            echo "**镜像（${IMAGE_PLATFORMS}）**"
             echo '```'
             echo "docker pull ${IMAGE_HINT}:${VERSION}"
             echo '```'

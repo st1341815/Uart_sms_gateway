@@ -18,7 +18,17 @@
 
 ## [未发布]
 
-（空）
+构建链瘦身：CI 不再容器内重复构建前端，镜像默认只出 amd64。
+
+- `build` `Dockerfile.multi` 新增 `WEB_PREBUILT`（默认 `1`）：直接 `go:embed`
+  CI 已产出的 `web/embed_dir`，容器内不再 `apk add git nodejs npm` + `npm ci`。
+  本地无预构建产物时传 `--build-arg WEB_PREBUILT=0` 走旧路径。
+- `ci` `release.yml` 新增 `env.IMAGE_PLATFORMS`（默认 `linux/amd64`），
+  需要 `linux/arm64` 时改一个变量即可（arm64 阶段走 QEMU，耗时数倍）。
+- `ci` buildx builder 改为「有注册就复用、没有才创建」；act_runner 作业容器
+  `~/.docker/buildx` 不持久需重建时，只删容器、保留 `*_state` 卷，
+  使 buildkit 缓存跨版本复用（此前每版 `rm` + `create` 全丢缓存）。
+- `docs` `docs/gitea-release.md`、`README.md` 同步镜像架构口径与踩坑记录。
 
 ---
 

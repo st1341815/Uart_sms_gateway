@@ -16,7 +16,7 @@
         │            └─ 作业容器 catthehacker/ubuntu:act-latest
         │                 ├─ node:22      → 前端构建（embed_dir）
         │                 ├─ golang:1.25  → 8 平台二进制 + tar.gz/zip
-        │                 └─ buildx(host net) → amd64+arm64 镜像
+        │                 └─ buildx(host net) → 镜像（默认仅 amd64）
         │                                       └→ Gitea 内置 registry
         │                 └─ scripts/ci-make-release.sh → Release + 附件
         └───────────────────────────────────────┘
@@ -26,7 +26,7 @@
 
 | 产物 | 位置 |
 |---|---|
-| 多架构镜像 | `192.168.11.7:3000/st1341815/uart_sms_gateway:X.Y.Z` 与 `:latest`（linux/amd64 + linux/arm64） |
+| 容器镜像 | `192.168.11.7:3000/st1341815/uart_sms_gateway:X.Y.Z` 与 `:latest`（默认 `linux/amd64`，`env.IMAGE_PLATFORMS` 可切 `linux/amd64,linux/arm64`） |
 | 发布包 | Release 附件：`uart_sms_forwarder-X.Y.Z-<os>-<arch>.tar.gz`、Windows `.exe.zip`、`SHA256SUMS` |
 | Release | `http://192.168.11.7:3000/st1341815/uart_sms_gateway/releases/tag/vX.Y.Z` |
 
@@ -146,7 +146,7 @@ git push gitea v1.2.1        # 推 tag 即触发
 | 版本号一致性 | `python3 scripts/check_version.py` |
 | 构建前端 | `node:22-bookworm` 里 `npm ci && npm run build`，产物覆盖 `web/embed_dir` |
 | 多平台二进制 | `golang:1.25` 里 `scripts/build-release.sh`（8 平台 + tar.gz/zip + SHA256SUMS） |
-| 多架构镜像 | `buildx`（docker-container driver，`network=host`）→ amd64 + arm64 清单，推到 Gitea registry |
+| 构建镜像 | `buildx`（docker-container driver，`network=host`）→ 按 `IMAGE_PLATFORMS` 出清单（默认仅 `linux/amd64`），推到 Gitea registry |
 | 建 Release | `scripts/ci-make-release.sh` 走 Gitea Release API（附件的字段是 multipart `attachment`，与 GitHub 不同），幂等 |
 | 汇总 | 写入 job summary |
 
@@ -168,12 +168,22 @@ Gitea registry 的仓库路径与访问域名无关，因此推 `127.0.0.1:3000/
    `docs/github-workflows/`，要恢复见那里的 README。
 3. **buildkit 拉 `docker.io` 会 EOF**：`scripts/buildkitd.toml` 配了镜像源
    （`docker.1ms.run`）。buildx 是客户端读取该文件后内嵌，所以仓库相对路径即可。
-4. **多架构必须 `docker-container` driver**：dockerd 默认 `docker` driver 不支持
-   manifest list。
+4. **manifest list 必须 `docker-container` driver**：dockerd 默认 `docker` driver
+   不支持 manifest list（要出多平台清单就必须换；单平台用 `docker` driver 也能跑）。
 5. **`HTTP_PORT` 与映射端口不一致** → push 全挂。
 6. **secret 名字不能以 `GITEA_` / `GITHUB_` 开头** → 用 `RELEASE_TOKEN`。
-7. **贴纸**：`docker buildx rm <name>` 在作业容器里执行没问题（builder 属于宿主 dockerd），
-   流水线会先 `rm` 再 `create`，保证幂等。
+7. **`docker buildx rm <name>` 在作业容器里没问题**（builder 属于宿主 dockerd），但
+   **不要每次都 `rm` + `create`**：那样每次发版都丢掉 buildkit 缓存。现在的写法是
+   「有注册就 `use`，没有才 `create`」；act_runner 作业容器的 `~/.docker/buildx`
+   不持久，所以通常仍是 `create`，此时若残留同名容器会报错 → 先
+   `docker rm -f buildx_buildkit_gitea-builder0`（**不加 `-v`，缓存卷
+   `buildx_buildkit_gitea-builder0_state` 会保留并被新容器挂回**）再重建。
+8. **前端不要在容器里再构建一次**：CI 已用 `node:22-bookworm` 产出
+   `web/dist` → 同步到 `web/embed_dir`；`Dockerfile.multi` 默认
+   `WEB_PREBUILT=1` 直接 `go:embed` 那份产物。2026-11-03 实测多架构构建里
+   arm64 走 QEMU，容器内 `apk add git nodejs npm` + `npm ci` 是整条流水线最慢的
+   一段（十几分钟），纯属重复劳动。本地手工构建没有预构建产物时才传
+   `--build-arg WEB_PREBUILT=0`。
 
 ## 6. 排障
 

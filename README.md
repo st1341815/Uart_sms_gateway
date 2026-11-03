@@ -301,8 +301,8 @@ make version                  # 打印当前版本号
 ### 6. 发版流程（本地 Gitea，一条命令）
 
 现在发版在**本地 Gitea** 上跑：推 `master` + 推 `vX.Y.Z` tag → Actions 自动
-构建多架构镜像、多平台发布包、并建 Release。GitHub 那条链路已归档（见
-`docs/github-workflows/`），默认不再使用。
+构建镜像（默认 `linux/amd64`，`IMAGE_PLATFORMS` 可切双架构）、多平台发布包、
+并建 Release。GitHub 那条链路已归档（见 `docs/github-workflows/`），默认不再使用。
 
 ```bash
 make bump-version V=1.2.1        # 改号 + CHANGELOG 插入占位节
@@ -316,7 +316,7 @@ GITEA_TOKEN=<token> ./scripts/release-gitea.sh   # == 推 master + 推 tag + 等
 
 | 产物 | 地址 |
 |---|---|
-| 镜像（amd64 + arm64） | `docker pull 192.168.11.7:3000/st1341815/uart_sms_gateway:1.2.1` |
+| 镜像（默认 amd64） | `docker pull 192.168.11.7:3000/st1341815/uart_sms_gateway:1.2.1` |
 | 发布包 | Release 附件（`uart_sms_forwarder-*` + `SHA256SUMS`） |
 | Release 页 | <http://192.168.11.7:3000/st1341815/uart_sms_gateway/releases> |
 
