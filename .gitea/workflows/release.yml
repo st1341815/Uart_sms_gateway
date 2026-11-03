@@ -32,8 +32,7 @@ env:
   # 用户侧 192.168.11.7 指向同一个镜像仓库。
   IMAGE_REPO: 127.0.0.1:3000/st1341815/uart_sms_gateway
   IMAGE_HINT: 192.168.11.7:3000/st1341815/uart_sms_gateway
-  # 作业容器是 host 网络 → 直接打宿主上的 gitea
-  GITEA_API: http://127.0.0.1:3000/api/v1
+  # GITEA_API 在「解析宿主地址」步骤里运行时探测后注入（见该步骤注释）
 
 jobs:
   release:
@@ -54,15 +53,35 @@ jobs:
           node --version
           go version || echo "(作业容器无 go，构建都在 golang 容器里跑)"
 
-      - name: 网络自检
+      - name: 解析宿主地址
         run: |
-          echo "server_url = ${GITHUB_SERVER_URL}"
-          echo "hostname   = $(hostname) / $(hostname -i 2>/dev/null || true)"
-          echo "--- ip ---"; ip -4 addr show 2>/dev/null | grep -E 'inet |^[0-9]' || true
-          echo "--- route ---"; ip route 2>/dev/null || true
-          echo "--- hosts ---"; cat /etc/hosts
-          echo "--- dns ---"; getent hosts gitea || echo "(gitea 不可解析)"
-          echo "--- 探 3000 ---"; (timeout 3 sh -c 'echo > /dev/tcp/127.0.0.1/3000' && echo "127.0.0.1:3000 通") || echo "127.0.0.1:3000 不通"
+          set -e
+          # act_runner 给每个 job 新建专属桥网络（GITEA-ACTIONS-TASK-...-release-network），
+          # 作业容器里 127.0.0.1 是它自己、域名 gitea 也不解析；
+          # 但「本网络的网关」就是宿主 → 走网关 IP 的 3000 端口即可打宿主上的 Gitea。
+          # 作业容器挂的是宿主 docker.sock，所以直接 inspect 自己就能拿到网关。
+          GW=$(docker inspect "$(hostname)" \
+                 --format '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}' 2>/dev/null | awk '{print $1}')
+          if [ -z "$GW" ] && [ -r /proc/net/route ]; then
+            HEX=$(awk '$2=="00000000" && $3!="00000000" {print $3; exit}' /proc/net/route)
+            if [ -n "$HEX" ]; then
+              N=$((16#$HEX))
+              GW="$((N & 255)).$(((N >> 8) & 255)).$(((N >> 16) & 255)).$(((N >> 24) & 255))"
+            fi
+          fi
+          echo "宿主网关（GW） = ${GW:-<未取到>}"
+          echo "作业容器 IP    = $(hostname -i 2>/dev/null || true)"
+          BASE=""
+          for cand in "http://${GW}:3000" "http://127.0.0.1:3000" "${GITHUB_SERVER_URL}" "http://gitea:3000"; do
+            case "$cand" in http://:3000|"") continue;; esac
+            if curl -fsS -m 5 -o /dev/null "${cand}/api/v1/version"; then
+              BASE="$cand"; break
+            fi
+          done
+          [ -n "$BASE" ] || { echo "::error::找不到可达的 Gitea 地址（网关 ${GW} / 127.0.0.1 / gitea 都不通）"; exit 1; }
+          echo "Gitea 可达地址 = $BASE"
+          echo "GITEA_BASE=$BASE" >> "$GITHUB_ENV"
+          echo "GITEA_API=$BASE/api/v1" >> "$GITHUB_ENV"
 
       - name: 检出代码（裸 git，不走 action）
         run: |
@@ -73,9 +92,8 @@ jobs:
           # 仓库是公开的 → 匿名 fetch 就能拉；token 只是转私有后的兜底。
           ok=0
           LAST_ERR=""
-          # 作业容器是 host 网络（act_runner container.network=host），所以
-          # 127.0.0.1:3000 就是宿主上的 gitea；另外两个只是兜底。
-          for base in "http://127.0.0.1:3000" "${GITHUB_SERVER_URL}" "http://gitea:3000"; do
+          # GITEA_BASE 由「解析宿主地址」步骤探出（本网络网关 :3000），其余只是兜底。
+          for base in "${GITEA_BASE}" "http://127.0.0.1:3000" "${GITHUB_SERVER_URL}" "http://gitea:3000"; do
             [ -n "$base" ] || continue
             url="${base}/${GITHUB_REPOSITORY}.git"
             if [ -n "$TOKEN" ]; then
@@ -188,5 +206,5 @@ jobs:
             echo "**发布包**"
             ls -lh dist-release/ | sed 's/^/    /'
             echo ""
-            echo "**Release** → ${GITHUB_SERVER_URL}/${REPO_OWNER}/${REPO_NAME}/releases/tag/${VERSION}"
+            echo "**Release** → ${GITEA_BASE}/${REPO_OWNER}/${REPO_NAME}/releases/tag/${VERSION}"
           } >> "$GITHUB_STEP_SUMMARY"
