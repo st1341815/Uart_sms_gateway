@@ -7,8 +7,11 @@ name: Release (Gitea)
 #   1) 容器镜像（默认仅 linux/amd64）→ Gitea 内置容器仓库
 #      需要 arm64 时把 env.IMAGE_PLATFORMS 改成 linux/amd64,linux/arm64
 #      （代价很大：arm64 阶段走 QEMU 模拟，首次构建可能几十分钟）
-#   2) 多平台二进制发布包 → dist-release/*.tar.gz / *.exe.zip + SHA256SUMS
-#      （二进制不看架构限制：Go 交叉编译，amd64/arm64 都有）
+#   2) 二进制发布包（仅 linux/amd64）→ dist-release/*.tar.gz + SHA256SUMS
+#      2026-11-03 按用户要求收窄到单一平台：部署目标就是 x86 服务器，
+#      其余平台产物从来没人下载，却让每次发版多花 5 次交叉编译。
+#      恢复多平台：把 scripts/build-release.sh 里注释掉的 build_one /
+#      pack_tar / pack_zip 行放回来（函数本身是通用的）。
 #   3) Gitea Release（tag）并挂上发布包
 #
 # ⚠️ 刻意不用 actions/checkout / setup-go / setup-node：

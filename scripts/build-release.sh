@@ -104,19 +104,25 @@ EOF
     fi
 }
 
+# 只出 linux/amd64（2026-11-03 按用户要求收窄）。
+#
+# 为什么砍掉其余 5 个平台：部署目标就是 x86 服务器（.21 宝塔主机 / 飞牛 NAS），
+# 其余产物从来没人下过，却让每次发版多花 5 次交叉编译的时间。
+# 恢复多平台只需把下面被注释掉的行放回来 —— build_one / pack_tar / pack_zip
+# 三个函数本身是通用的，没有硬编码任何单一平台。
 build_one linux  amd64 ""   linux-amd64
-build_one linux  arm64 ""   linux-arm64
-build_one linux  arm   7    linux-armv7
-build_one windows amd64 ""  windows-amd64
-build_one darwin amd64 ""   darwin-amd64
-build_one darwin arm64 ""   darwin-arm64
+# build_one linux  arm64 ""   linux-arm64
+# build_one linux  arm   7    linux-armv7
+# build_one windows amd64 ""  windows-amd64
+# build_one darwin amd64 ""   darwin-amd64
+# build_one darwin arm64 ""   darwin-arm64
 
 pack_tar linux-amd64   uart_sms_forwarder-linux-amd64
-pack_tar linux-arm64   uart_sms_forwarder-linux-arm64
-pack_tar linux-armv7   uart_sms_forwarder-linux-armv7
-pack_tar darwin-amd64  uart_sms_forwarder-darwin-amd64
-pack_tar darwin-arm64  uart_sms_forwarder-darwin-arm64
-pack_zip windows-amd64 uart_sms_forwarder-windows-amd64.exe
+# pack_tar linux-arm64   uart_sms_forwarder-linux-arm64
+# pack_tar linux-armv7   uart_sms_forwarder-linux-armv7
+# pack_tar darwin-amd64  uart_sms_forwarder-darwin-amd64
+# pack_tar darwin-arm64  uart_sms_forwarder-darwin-arm64
+# pack_zip windows-amd64 uart_sms_forwarder-windows-amd64.exe
 
 # 只对真实存在的产物算校验和（无 zip 命令时 *.zip 可能为空）
 sha256_of() {
