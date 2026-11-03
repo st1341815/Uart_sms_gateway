@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {cn} from '@/lib/utils';
+import {useMediaQuery} from '@/lib/use-media-query';
 
 const AVATAR_TONES = [
     'bg-blue-700',
@@ -114,8 +115,16 @@ export default function Messages() {
     //   - 没点选过 → 回落到第一个会话 / 第一台在线设备
     // react-hooks/set-state-in-effect 规则认为 effect 内同步 setState 会级联渲染。
     // 选中的会话用「设备 + 号码」组合键标识；未选时回落到列表第一条。
+    //
+    // ⚠️ 自动回落只在桌面端生效。移动端是「列表 / 详情」二选一布局：
+    //   列表的显隐由 selectedPeer 控制（选了就 hidden），详情反过来。
+    //   如果移动端也自动回落第一个会话，进入页面就直接是详情、列表隐藏；
+    //   而返回按钮执行的是 setPeerSelection(null)，随即又被回落逻辑选回第一条，
+    //   结果就是卡在同一个会话里，切换其他号卡会话的入口彻底消失。
+    //   所以移动端必须以「未选中」作为初始态，让用户先看到按号卡分组的列表。
+    const isDesktop = useMediaQuery('(min-width: 768px)');
     const selectedConvKey = peerSelection
-        ?? (conversations[0] ? convKey(conversations[0].deviceId, conversations[0].peer) : null);
+        ?? (isDesktop && conversations[0] ? convKey(conversations[0].deviceId, conversations[0].peer) : null);
     const activeConversation = conversations.find(
         (conv) => convKey(conv.deviceId, conv.peer) === selectedConvKey,
     ) ?? null;
@@ -331,6 +340,11 @@ export default function Messages() {
         return d?.name || deviceId;
     };
 
+    // 当前会话所属的卡（名称 + 号码），用于详情头部标明「这是哪张卡的会话」。
+    // 多卡场景下，光看对方号码分不清是和哪个号在通信；移动端尤其需要，
+    // 因为切进来后列表已隐藏，没有其他位置能看到当前号卡。
+    const selectedConvDevice = devices.find((d) => d.id === selectedConvDeviceId);
+
     return (
         <div className="flex h-[calc(100dvh-108px)] min-h-[560px] flex-col">
             <PageHeader
@@ -522,8 +536,17 @@ export default function Messages() {
                                     </span>
                                     <div className="min-w-0">
                                         <h3 className="truncate text-sm font-bold text-slate-900">{selectedPeer}</h3>
-                                        <span className="text-xs text-slate-500">
-                                            共 {activeConversation?.messageCount ?? 0} 条消息
+                                        <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                                            {/* 标明这张卡：多卡共用一个界面，不写出来就分不清在跟哪个号通信 */}
+                                            <span className={cn(
+                                                'size-1.5 shrink-0 rounded-full',
+                                                selectedConvDevice?.connected ? 'bg-emerald-500' : 'bg-slate-300',
+                                            )} />
+                                            <span className="truncate">
+                                                {selectedConvDevice?.name || selectedConvDeviceId || '未标记设备'}
+                                            </span>
+                                            <span className="shrink-0 text-slate-300">·</span>
+                                            <span className="shrink-0">共 {activeConversation?.messageCount ?? 0} 条消息</span>
                                         </span>
                                     </div>
                                 </div>

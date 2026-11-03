@@ -16,6 +16,32 @@
 
 ---
 
+## [1.1.8] — 2026-11-04
+
+手机端短信中心修 bug：进页面就被锁在默认会话里，切换号卡的入口消失。
+
+**根因**：`selectedConvKey` 在用户没点选过时会回落到 `conversations[0]`
+（`peerSelection ?? conversations[0]`）。桌面端这是有意的「自动选中第一条」，
+但移动端是「列表 / 详情」二选一布局，列表显隐由 `selectedPeer` 控制
+（选中即 `hidden`）。于是进入页面就直接落到详情、列表被隐藏；
+而返回按钮执行的是 `setPeerSelection(null)`，随即又被回落逻辑选回第一条，
+**返回变成空操作**，用户被永久困在同一个会话里，看不到按号卡分组的列表。
+
+- `fix` 自动回落改为**仅桌面端生效**：`peerSelection ?? (isDesktop && conversations[0] ? ... : null)`。
+  移动端以「未选中」为初始态，先展示分组列表；点会话进详情、点返回回列表，
+  可以自由在各号卡之间切换。
+- `feat` 会话详情头部补上**当前所属的卡**（名称 + 在线状态点 + 消息数）。
+  多卡共用一个界面，移动端切进详情后列表已隐藏，没有其他位置能看出正在用哪张卡通信。
+- `impl` 新增 `web/src/lib/use-media-query.ts`：用 `useSyncExternalStore` 订阅
+  `matchMedia`，而不是 `useState + useEffect`。两个原因——`matchMedia` 是外部可变源，
+  订阅式读取语义才对，且不会出现首帧渲染错误值再纠正的闪烁；
+  同时避开 `react-hooks/set-state-in-effect`（effect 内同步 setState 会级联渲染）。
+
+**验证**：建了带 2 张卡 / 3 个会话（含两卡同号）的测试库，用 CDP 手机视口 390×844 实测。
+修复前：初始 `list=none, detail=flex`，点返回后仍 `list=none, detail=flex`（卡住）。
+修复后：初始 `list=flex(356px), detail=none`，点会话 → 详情、点返回 → 列表恢复，
+可在卡1/卡2 会话间来回切换。
+
 ## [1.1.7] — 2026-11-03
 
 短信中心：分组支持折叠，号码多时不用一路滚下去。
