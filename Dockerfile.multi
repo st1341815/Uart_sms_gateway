@@ -44,7 +44,8 @@ RUN set -e; \
         echo "→ 使用预构建前端 web/embed_dir（跳过容器内 npm 构建）"; \
     else \
         echo "→ 容器内构建前端（WEB_PREBUILT=0）"; \
-        apk add --no-cache git nodejs npm; \
+        sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories; \
+        timeout 180 apk add --no-cache git nodejs npm; \
         npm config set registry "$NPM_REGISTRY"; \
         cd /build/web && npm ci && npm run build; \
         rm -rf /build/web/embed_dir && cp -a /build/web/dist /build/web/embed_dir; \
@@ -53,7 +54,11 @@ RUN set -e; \
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
 
 FROM alpine:latest
-RUN apk add --no-cache ca-certificates tzdata || true
+# 换国内 apk 源 + 超时兜底：dl-cdn.alpinelinux.org 在本机被 DNS 解析到 fake-ip 段
+# （198.18.0.144，RFC2544 保留段），实测下载只有 20KB/s，容器内 apk add 会静默卡死
+# 5~10 分钟、零输出。镜像换 aliyun（实测 1.1MB/s），timeout 兜底避免再次挂起。
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories \
+ && timeout 60 apk add --no-cache ca-certificates tzdata || true
 WORKDIR /app
 COPY --from=builder /build/uart_sms_forwarder .
 COPY --from=builder /build/config.example.yaml ./config.example.yaml

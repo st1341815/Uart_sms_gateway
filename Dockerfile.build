@@ -6,7 +6,11 @@ WORKDIR /build
 # 安装依赖（需要 node 来构建前端）
 # ⚠️ web/assets.go 用 go:embed 嵌的是 web/embed_dir，不是 web/dist。
 #    前端构建完必须同步到 embed_dir，否则镜像里打进的是仓库里的旧前端。
-RUN apk add --no-cache git nodejs npm
+# 换国内 apk 源 + 超时兜底：dl-cdn.alpinelinux.org 在本机被 DNS 解析到 fake-ip 段
+# （198.18.0.144，RFC2544 保留段），实测下载只有 20KB/s，apk add 会静默卡死 5~10 分钟。
+# 换 aliyun（实测 1.1MB/s）；timeout 保证卡住时快速失败而不是无限挂起。
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories \
+ && timeout 180 apk add --no-cache git nodejs npm
 
 # 复制 go 模块文件
 COPY go.mod go.sum ./
@@ -25,7 +29,9 @@ RUN cd /build && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w"
 # 最终镜像
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates tzdata wget || true
+# 同上：最终阶段也是 alpine 基镜像，同样需要换源 + 超时兜底。
+RUN sed -i 's#https://dl-cdn.alpinelinux.org#https://mirrors.aliyun.com#g' /etc/apk/repositories \
+ && timeout 60 apk add --no-cache ca-certificates tzdata wget || true
 
 WORKDIR /app
 
