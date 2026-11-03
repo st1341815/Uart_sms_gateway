@@ -167,21 +167,23 @@ export default function Layout() {
                         <RadioTower className={cn('size-4', allOnline ? 'text-blue-300' : 'text-blue-200/40')}/>
                     </div>
                 </div>
-                <div className="flex items-center justify-between px-1">
-                    <span
-                        className="truncate font-mono text-[10px] tracking-wide text-blue-100/55"
-                        title={`UART SMS Gateway v${APP_VERSION}`}
-                    >
-                        UART SMS Gateway v{APP_VERSION}
-                    </span>
+                {/* 退出登录在上、版本号在下：两者并排时「UART SMS Gateway v1.1.0」
+                    会把「退出登录」挤出侧栏（248px 装不下），所以拆成两行。 */}
+                <div className="space-y-1 px-1">
                     <button
                         type="button"
                         onClick={handleLogout}
-                        className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
                     >
                         <LogOut className="size-3.5"/>
                         退出登录
                     </button>
+                    <p
+                        className="text-center font-mono text-[10px] tracking-wide text-blue-100/45"
+                        title={`UART SMS Gateway v${APP_VERSION}`}
+                    >
+                        v{APP_VERSION}
+                    </p>
                 </div>
             </div>
         </div>
