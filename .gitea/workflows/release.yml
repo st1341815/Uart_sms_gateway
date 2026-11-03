@@ -36,25 +36,28 @@ env:
   # 仓库坐标（不依赖 gitea.* 上下文，避免 server_url 内网/外网不一致时出错）
   REPO_OWNER: st1341815
   REPO_NAME: uart_sms_gateway
-  # 镜像仓库地址：用 Gitea 容器的 bridge 网关 IP，不用 127.0.0.1。
+  # 镜像仓库地址：127.0.0.1:3000。
   #
-  # 2026-11-03 run 94/95/96 连续三次倒在 push 阶段的
-  #   failed to fetch oauth token: Post "http://127.0.0.1:3000/v2/token":
-  #   dial tcp 127.0.0.1:3000: connect: connection refused
-  # 排查结论（实测，不是猜）：
-  #   Gitea 是 bridge 网络里的容器（172.20.0.2:3000），宿主上 3000 由
-  #   docker-proxy 发布。buildkit 容器虽然 network=host，但 buildkitd
-  #   发起 push 时走的那条路径上 127.0.0.1 摸不到 docker-proxy 的发布口。
-  #   （docker exec 进容器测 127.0.0.1:3000 是通的，但那是 exec 的 netns，
-  #    和 buildkitd 的 push 路径不是一回事 —— 曾据此误判为启动竞态，
-  #    加了就绪探活后 run 96 探活第 1 次就通过、push 依旧失败，才排除该假设。）
-  # 实测可达性：
-  #   172.20.0.1:3000（gitea_default 网关）  → 通，/v2/token 正常返回 token
-  #   172.20.0.2:3000（Gitea 容器 IP）       → 通，但容器重建会变
-  #   192.168.11.7:3000（宿主局域网 IP）     → 超时
-  # 所以选网关 IP：它随 gitea_default 网络存在而稳定，不依赖容器 IP。
-  # 推送地址与用户拉取地址解耦（IMAGE_HINT 给用户看），不影响镜像仓库路径。
-  IMAGE_REPO: 172.20.0.1:3000/st1341815/uart_sms_gateway
+  # 为什么是它（2026-11-03 实测，别再改）：
+  #   本机 daemon 的 insecure-registries = ["::1/128", "127.0.0.0/8"]，
+  #   即 docker 只对 loopback 网段自动降级走 HTTP。Gitea registry 是明文
+  #   HTTP，换任何非 loopback 地址（172.20.0.1 / 172.20.0.2 / 192.168.11.7）
+  #   daemon 都会强制 https 握手，报：
+  #     Get "https://172.20.0.1:3000/v2/": http: server gave HTTP response
+  #     to HTTPS client     ← run 99 就是这么挂的
+  #
+  #   本机实测：docker login 127.0.0.1:3000 → Login Succeeded。
+  #
+  # 踩过的坑（都发生在这一个变量的来回改动上，记下来免得再犯）：
+  #   run 94-96 用 127.0.0.1 时失败，报 connection refused。当时误判为
+  #     "127.0.0.1 在 buildkit 里指向容器自己"，改成了 172.20.0.1。
+  #     实际真因是 buildx/buildkit 那一层（已整体弃用，见「构建并推送镜像」）。
+  #     换地址反而引入了 run 97（https/http 不匹配）和 run 99（同款）。
+  #   ⚠️ 排查时务必先确认在「哪台机器」上验证：Gitea + act_runner 都在
+  #     192.168.11.7（GMKfnos），不是 192.168.11.21（dockersver，那台只跑
+  #     sms-multi）。曾在 .21 上测 127.0.0.1:3000 得到 connection refused 并
+  #     据此误判——那台机器本来就没有 Gitea。
+  IMAGE_REPO: 127.0.0.1:3000/st1341815/uart_sms_gateway
   IMAGE_HINT: 192.168.11.7:3000/st1341815/uart_sms_gateway
   # 镜像目标架构。默认只出 amd64：
   #   2026-11-03 实测，多架构（+linux/arm64）会让 arm64 阶段在 QEMU 下跑完
