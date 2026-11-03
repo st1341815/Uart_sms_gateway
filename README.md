@@ -250,11 +250,13 @@ cd web && npm ci && npm run build
 #    漏了这一步，编出来的二进制里是「仓库里的旧前端」。
 cd .. && rm -rf web/embed_dir && cp -a web/dist web/embed_dir
 
-# 3) 后端（-X 注入版本号）
-CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/dushixiang/uart_sms_forwarder/internal/version.Version=v1.0.1" -o uart_sms_forwarder ./cmd/serv
+# 3) 后端
+#    版本号已写死在 internal/version/version.go 的默认值里，
+#    裸 go build 出来的二进制就带正确版本（不再依赖 -ldflags 注入）
+CGO_ENABLED=0 go build -o uart_sms_forwarder ./cmd/serv
 ```
 
-或者直接 `make build-server`（已把 `prepare-embed` 做成前置依赖，会自动同步）。
+或者直接 `make build-server`（已把 `prepare-embed` 和 `check-version` 做成前置依赖，会自动同步并校验版本号）。
 
 > **构建可复现**：`web/src/index.css` 里用 `@source not` 把 `web/embed_dir`、`web/dist`
 > 排除出 Tailwind 的自动内容扫描。不加这两行的话，上一次构建的 bundle 会被当源码再扫一遍，
@@ -266,6 +268,35 @@ CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/dushixiang/uart_sms_forward
 ```bash
 docker build -f Dockerfile.multi -t uart-sms-gateway:latest .
 ```
+
+> 国内网络下 `proxy.golang.org` / `registry.npmjs.org` 常常不通。
+> `Dockerfile.multi` 的 `GOPROXY`、`NPM_REGISTRY` 做成了 build-arg，**默认就是
+> `goproxy.cn` / `npmmirror`**；需要直连官方时显式覆盖：
+> `--build-arg GOPROXY=https://proxy.golang.org,direct`。
+
+### 5. 发版流程（版本号只有一处定义，别手改三遍）
+
+版本号存在于三处，**必须同步**，否则会出现「侧边栏显示的版本 ≠ 实际代码」：
+
+| 位置 | 作用 |
+|---|---|
+| `web/src/lib/version.ts` 的 `APP_VERSION` | 侧边栏 / 分享页等 UI 展示 |
+| `internal/version/version.go` 的 `Version` 默认值 | `GET /api/version`、裸 `go build` 的产物 |
+| `CHANGELOG.md` 里对应版本的一节 | 更新记录（写清改了什么） |
+
+一条命令改完三处：
+
+```bash
+make bump-version V=1.2.0     # 改号 + 在 CHANGELOG 插入占位节
+make check-version            # 校验三处一致（不一致退出码 1）
+make version                  # 打印当前版本号
+```
+
+`check-version` 已挂到 `build-web` / `build-server` / `build-servers` 的前置依赖，
+以及 CI 的第一步 —— 漏改版本号，构建直接失败。
+
+> 历史教训：1.1.0 之后连续发了 2 个版本忘了改号，Docker 镜像都重建了，
+> 侧边栏还显示 v1.1.0。这就是 `CHANGELOG.md` 和这套检查的由来。
 
 ---
 

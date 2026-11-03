@@ -1,13 +1,22 @@
-.PHONY: check-version build-web prepare-embed build-server build-servers build-linux build-release clean dev run
+.PHONY: version check-version bump-version build-web prepare-embed build-server build-servers build-linux build-release clean dev run
 
 # 变量定义
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -s -w -X github.com/dushixiang/uart_sms_forwarder/internal/version.Version=$(VERSION)
 GOFLAGS := CGO_ENABLED=0
 
-# 检查前后端版本号是否一致（前端 web/src/lib/version.ts、后端 internal/version/version.go）
+# 打印当前版本号
+version:
+	@python3 scripts/check_version.py --print
+
+# 检查版本号一致性（前端 / 后端 / CHANGELOG 三处）
 check-version:
 	@python3 scripts/check_version.py
+
+# 发版改号：make bump-version V=1.2.0
+bump-version:
+	@if [ -z "$(V)" ]; then echo "用法：make bump-version V=1.2.0"; exit 1; fi
+	@python3 scripts/check_version.py --bump $(V)
 
 # 构建前端
 build-web: check-version
