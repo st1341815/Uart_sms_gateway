@@ -242,6 +242,41 @@ jobs:
           fi
           docker buildx use gitea-builder
 
+          # 等 buildkit 真正能连上 registry 再开 build。
+          #
+          # 为什么需要：docker buildx create 是异步的，容器状态变成 running
+          # 只代表进程起来了，host 网络的可用性还要再等一会儿。2026-11-03
+          # run 94 就是踩这个：11:58:31 创建容器，11:58:51 push 时
+          # `dial tcp 127.0.0.1:3000: connect: connection refused` 直接失败
+          # ——镜像层都传完了才倒在最后一步 auth 上，白等 20 秒。
+          # 事后在同一个容器里连测 20 次全部成功，证明不是常驻性网络问题，
+          # 纯粹是启动窗口内的竞态。
+          #
+          # 用「容器内 wget 探活」而不是固定 sleep：探活成功即走，
+          # 正常情况下 0~1 秒就过，不会给每次发版平白加等待。
+          echo "-- 等待 buildkit 网络就绪"
+          READY=0
+          for i in $(seq 1 30); do
+            if docker exec buildx_buildkit_gitea-builder0 \
+                 wget -qO- -T 3 "http://127.0.0.1:3000/api/v1/version" >/dev/null 2>&1; then
+              echo "   buildkit 已连通 registry（第 ${i} 次探测）"
+              READY=1
+              break
+            fi
+            echo "   第 ${i} 次探测未通，1s 后重试"
+            sleep 1
+          done
+          if [ "$READY" != 1 ]; then
+            echo "::error::buildkit 容器 30s 内连不上 127.0.0.1:3000（Gitea registry）"
+            echo "-- 诊断：容器网络模式"
+            docker inspect buildx_buildkit_gitea-builder0 \
+              --format 'NetworkMode={{.HostConfig.NetworkMode}} Status={{.State.Status}}'
+            echo "-- 诊断：容器内看 3000 端口的连通性"
+            docker exec buildx_buildkit_gitea-builder0 \
+              sh -c 'wget -qO- -T 3 http://127.0.0.1:3000/api/v1/version || echo "(不通)"' || true
+            exit 1
+          fi
+
           echo "目标平台 = ${IMAGE_PLATFORMS}"
           docker buildx build \
             --platform "${IMAGE_PLATFORMS}" \
