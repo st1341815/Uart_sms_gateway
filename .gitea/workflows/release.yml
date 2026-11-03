@@ -168,6 +168,24 @@ jobs:
           echo "----- 产物 -----"
           ls -lh dist-release/
 
+      - name: 打包 Windows zip（构建镜像无 zip 时用 python3）
+        run: |
+          set -e
+          need=0
+          for d in dist-release/uart_sms_forwarder-*-windows-amd64; do
+            [ -d "$d" ] || continue
+            need=1
+            python3 scripts/zip_dir.py "$d"
+            rm -rf "$d"
+          done
+          if [ "$need" = 1 ]; then
+            ( cd dist-release && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS.txt )
+            cat dist-release/SHA256SUMS.txt
+          else
+            echo "构建镜像已自带 zip 命令，无需补救"
+          fi
+          ls -lh dist-release/
+
       - name: 构建并推送多架构镜像
         run: |
           set -e

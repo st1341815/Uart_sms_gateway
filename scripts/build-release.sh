@@ -45,7 +45,7 @@ build_one() {
     case "$os" in windows) name="${name}.exe" ;; esac
     echo "→ building ${label}"
     env CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" ${goarm:+GOARM="$goarm"} \
-        go build -trimpath -ldflags="$LDFLAGS" -o "$name" ./cmd/serv
+        go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o "$name" ./cmd/serv
 }
 
 pack_tar() {
@@ -92,10 +92,16 @@ UART SMS Gateway ${VERSION_NUM} (${label})
 
 ⚠️ 首次启动会在 data\\ 下生成 .jwt_secret，**必须跟 data\\ 一起备份**。
 EOF
-    ( cd "$OUT" && zip -qr "uart_sms_forwarder-${VERSION_NUM}-${label}.zip" \
-        "uart_sms_forwarder-${VERSION_NUM}-${label}" )
-    rm -rf "$dir"
-    echo "  ✓ uart_sms_forwarder-${VERSION_NUM}-${label}.zip"
+    if command -v zip >/dev/null 2>&1; then
+        ( cd "$OUT" && zip -qr "uart_sms_forwarder-${VERSION_NUM}-${label}.zip" \
+            "uart_sms_forwarder-${VERSION_NUM}-${label}" )
+        rm -rf "$dir"
+        echo "  ✓ uart_sms_forwarder-${VERSION_NUM}-${label}.zip"
+    else
+        # 某些构建镜像（如 golang:1.25）没装 zip。保留待打包目录，
+        # 由调用方（CI 作业容器里的 python3 / 本地）压成 .zip。
+        echo "  ! 无 zip 命令，保留目录待外部打包：$(basename "$dir")" >&2
+    fi
 }
 
 build_one linux  amd64 ""   linux-amd64
@@ -107,13 +113,23 @@ build_one darwin arm64 ""   darwin-arm64
 
 pack_tar linux-amd64   uart_sms_forwarder-linux-amd64
 pack_tar linux-arm64   uart_sms_forwarder-linux-arm64
-pack_tar linux-armv7   uart_sms_forwarder-linux-arm
+pack_tar linux-armv7   uart_sms_forwarder-linux-armv7
 pack_tar darwin-amd64  uart_sms_forwarder-darwin-amd64
 pack_tar darwin-arm64  uart_sms_forwarder-darwin-arm64
-pack_zip windows-amd64 uart_sms_forwarder-windows-amd64
+pack_zip windows-amd64 uart_sms_forwarder-windows-amd64.exe
 
-( cd "$OUT" && sha256sum ./*.tar.gz ./*.zip > SHA256SUMS.txt 2>/dev/null || \
-                 shasum -a 256 ./*.tar.gz ./*.zip > SHA256SUMS.txt )
+# 只对真实存在的产物算校验和（无 zip 命令时 *.zip 可能为空）
+sha256_of() {
+    for f in "$@"; do
+        [ -f "$f" ] || continue
+        if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$f"
+        else
+            shasum -a 256 "$f"
+        fi
+    done
+}
+( cd "$OUT" && sha256_of ./*.tar.gz ./*.zip > SHA256SUMS.txt )
 
 echo
 echo "==== 发布包 ===="

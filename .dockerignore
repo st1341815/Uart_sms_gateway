@@ -13,6 +13,10 @@
 # 构建产物（除了需要的 bin 目录）
 # bin 目录需要保留，因为 Dockerfile 需要它
 
+# 本地发版产物
+dist-release
+.release-bin
+
 # 前端相关
 web/node_modules
 web/.next
