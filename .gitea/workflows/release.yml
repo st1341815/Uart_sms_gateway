@@ -2,18 +2,17 @@ name: Release (Gitea)
 
 # 本地 Gitea 的发版流水线。
 #
-# 触发：推送 v* tag（同时会触发一次 push，日常 CI 见 ci.yml）
+# 触发：推送 v* tag
 # 产出：
-#   1) 多架构镜像 →  Gitea 内置容器仓库 <gitea>/<owner>/<repo>:<tag> 与 :latest
-#   2) 多平台二进制 → 发布包 uart_sms_forwarder-<tag>-<platform>.tar.gz / .exe.zip
+#   1) 多架构镜像（linux/amd64 + linux/arm64）→ Gitea 内置容器仓库
+#   2) 多平台二进制发布包 → dist-release/*.tar.gz / *.exe.zip + SHA256SUMS
 #   3) Gitea Release（tag）并挂上发布包
 #
 # ⚠️ 刻意不用 actions/checkout / setup-go / setup-node：
 #   act_runner 是「作业容器 + 宿主 dockerd」模式（无 DinD），拉 GitHub 上的
-#   action 要经过 Gitea 的 actions 代理，本机网络下反复 i/o timeout；
-#   setup-go / setup-node 还要从 action 缓存里下 toolchain。
-#   改为：git clone（token 内嵌 URL）+ 直接用 golang / node 官方镜像跑步骤。
-#   纯 shell，无第三方 action，稳定且快。
+#   action 要经过 Gitea 的 actions 代理，本机网络下反复 i/o timeout。
+#   改为：裸 git 拉代码 + 直接用 golang / node 官方镜像跑步骤。
+
 
 on:
   push:
@@ -25,8 +24,15 @@ env:
   DOCKER_HOST: unix:///var/run/docker.sock
   GOPROXY: https://goproxy.cn,direct
   NPM_REGISTRY: https://registry.npmmirror.com
-  # 镜像仓库地址 = Gitea 自己的内置 registry
-  IMAGE_REPO: ${{ gitea.server_url }}/${{ gitea.repository }}
+  # 仓库坐标（不依赖 gitea.* 上下文，避免 server_url 内网/外网不一致时出错）
+  REPO_OWNER: st1341815
+  REPO_NAME: uart_sms_gateway
+  # buildkit 容器是 network=host，只能解析宿主侧地址 → 用 127.0.0.1:3000 推送。
+  # Gitea 内置 registry 的仓库路径与访问域名无关，所以推 127.0.0.1 与
+  # 用户侧 192.168.11.7 指向同一个镜像仓库。
+  IMAGE_REPO: 127.0.0.1:3000/st1341815/uart_sms_gateway
+  IMAGE_HINT: 192.168.11.7:3000/st1341815/uart_sms_gateway
+  GITEA_API: http://gitea:3000/api/v1
 
 jobs:
   release:
@@ -35,30 +41,41 @@ jobs:
       - name: 环境检查
         run: |
           set -e
-          echo "tag      = ${GITHUB_REF#refs/tags/}"
-          echo "repo     = ${GITHUB_REPOSITORY}"
-          echo "server   = ${GITHUB_SERVER_URL}"
-          echo "image    = ${IMAGE_REPO}"
-          echo "workspace= $PWD"
+          echo "tag       = ${GITHUB_REF#refs/tags/}"
+          echo "repo      = ${GITHUB_REPOSITORY}"
+          echo "server    = ${GITHUB_SERVER_URL}"
+          echo "image(push)   = ${IMAGE_REPO}"
+          echo "image(pull)   = ${IMAGE_HINT}"
+          echo "workspace = $PWD"
           docker version --format '  docker {{.Server.Version}}'
           docker buildx version || true
           git --version
           node --version
-          go version || echo "(宿主机无 go，后面都在容器里跑)"
+          go version || echo "(作业容器无 go，构建都在 golang 容器里跑)"
 
       - name: 检出代码（裸 git，不走 action）
         run: |
           set -e
+          TAG="${GITHUB_REF#refs/tags/}"
           git init -q .
-          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          TOKEN="${GITHUB_TOKEN:-${{ secrets.GITEA_TOKEN }}}"
-          if [ -z "$TOKEN" ]; then
-            echo "::error::没有可用的仓库 token，无法 clone"
-            exit 1
-          fi
-          # token 只存在变量与 URL 里，不落盘、不回显
-          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)" \
-              fetch --depth=1 origin "+refs/tags/${GITHUB_REF#refs/tags/}:refs/tags/release"
+          TOKEN="${{ secrets.RELEASE_TOKEN }}"
+          # 仓库是公开的 → 匿名 fetch 就能拉；token 只是转私有后的兜底。
+          ok=0
+          for base in "${GITHUB_SERVER_URL}" "http://gitea:3000"; do
+            [ -n "$base" ] || continue
+            url="${base}/${GITHUB_REPOSITORY}.git"
+            if [ -n "$TOKEN" ]; then
+              # token 只出现在变量与 base64 后的 auth 头里，不落盘、不回显
+              if git -c "http.extraheader=AUTHORIZATION: basic $(printf '%s' "${REPO_OWNER}:${TOKEN}" | base64 -w0)" \
+                   fetch --depth=1 "$url" "+refs/tags/${TAG}:refs/tags/release" 2>/dev/null; then
+                echo "带 token 检出成功（$base）"; ok=1; break
+              fi
+            fi
+            if git fetch --depth=1 "$url" "+refs/tags/${TAG}:refs/tags/release" 2>/dev/null; then
+              echo "匿名检出成功（$base）"; ok=1; break
+            fi
+          done
+          [ "$ok" = 1 ] || { echo "::error::拉取 tag ${TAG} 失败（网络或权限）"; exit 1; }
           git checkout -q refs/tags/release
           echo "HEAD = $(git rev-parse --short HEAD)"
           ls
@@ -99,9 +116,27 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF#refs/tags/}"
-          echo "${{ secrets.GITEA_TOKEN }}" | \
-            docker login "${GITHUB_SERVER_URL#http://}" -u "${GITHUB_REPOSITORY%%/*}" --password-stdin
-          docker buildx create --name relbuilder --use --driver docker-container 2>/dev/null || docker buildx use relbuilder
+          TOKEN="${{ secrets.RELEASE_TOKEN }}"
+          [ -n "$TOKEN" ] || { echo "::error::缺少仓库 secret RELEASE_TOKEN"; exit 1; }
+
+          # 不调 docker login：作业容器里的 127.0.0.1 是它自己，登录不上去；
+          # 这里直接把凭证写进 client 的 config.json，buildx 会把它带给 buildkit。
+          mkdir -p "$HOME/.docker"
+          printf '{"auths":{"%s":{"auth":"%s"}}}' "$IMAGE_REPO" \
+            "$(printf '%s' "${REPO_OWNER}:${TOKEN}" | base64 -w0)" | sed 's/[[:space:]]*$//' \
+            > "$HOME/.docker/config.json"
+          chmod 600 "$HOME/.docker/config.json"
+
+          # docker-container driver + network=host：多架构必需（dockerd 的 docker
+          # driver 不支持 manifest list），host 网络才能解析 127.0.0.1:3000。
+          # buildkitd.toml 让 buildkit 的 docker.io 走国内镜像源（直连会 EOF）。
+          docker buildx rm gitea-builder >/dev/null 2>&1 || true
+          docker buildx create --name gitea-builder \
+            --driver docker-container \
+            --driver-opt network=host \
+            --buildkitd-config scripts/buildkitd.toml
+          docker buildx use gitea-builder
+
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             -f Dockerfile.multi \
@@ -110,25 +145,32 @@ jobs:
             -t "${IMAGE_REPO}:${VERSION}" \
             -t "${IMAGE_REPO}:latest" \
             --push .
+
           echo "镜像已推送：${IMAGE_REPO}:${VERSION}"
+          docker buildx imagetools inspect "${IMAGE_REPO}:${VERSION}" | head -20
 
       - name: 创建 Release 并上传发布包
         run: |
           set -e
           VERSION="${GITHUB_REF#refs/tags/}"
-          mkdir -p .release-bin && cp dist-release/* .release-bin/
-          sh scripts/release-gitea.sh "$VERSION" .release-bin
+          GITEA_TOKEN="${{ secrets.RELEASE_TOKEN }}" \
+          GITEA_API="$GITEA_API" \
+          GITEA_REPO="${REPO_OWNER}/${REPO_NAME}" \
+          IMAGE_HINT="$IMAGE_HINT" \
+            sh scripts/ci-make-release.sh "$VERSION" dist-release
 
       - name: 汇总
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
           {
-            echo "## 发布完成 $VERSION"
+            echo "## 发布完成 ${VERSION}"
             echo ""
-            echo "**镜像（amd64 + arm64）**"
+            echo "**镜像（linux/amd64 + linux/arm64）**"
             echo '```'
-            echo "docker pull ${IMAGE_REPO}:${VERSION}"
+            echo "docker pull ${IMAGE_HINT}:${VERSION}"
             echo '```'
             echo "**发布包**"
             ls -lh dist-release/ | sed 's/^/    /'
+            echo ""
+            echo "**Release** → ${GITHUB_SERVER_URL}/${REPO_OWNER}/${REPO_NAME}/releases/tag/${VERSION}"
           } >> "$GITHUB_STEP_SUMMARY"

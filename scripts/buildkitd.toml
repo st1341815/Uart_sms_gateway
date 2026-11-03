@@ -1,0 +1,10 @@
+# buildkitd 配置（仅本地 Gitea 发版流水线用）
+#
+# 为什么需要它：act_runner 的作业容器里 Dockfile 的 FROM 是走 buildkit 拉取的，
+# 而 buildkit 容器（docker-container driver，network=host）直接访问
+# registry-1.docker.io 会 EOF（本机出口被拦）。这里让 docker.io 走国内镜像源。
+#
+# 用 `docker buildx create --buildkitd-config scripts/buildkitd.toml` 引用，
+# buildx 是「客户端读取后内嵌」的，所以相对路径即可，不要求宿主路径存在。
+[registry."docker.io"]
+  mirrors = ["docker.1ms.run"]

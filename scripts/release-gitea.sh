@@ -1,136 +1,164 @@
 #!/bin/sh
-# 在 Gitea 上创建 Release 并上传发布包。
+# 一键发版到本地 Gitea。
 #
-# 为什么不用 softprops/action-gh-release：
-#   那个 action 调的是 api.github.com，Gitea 上跑不通。
-#   Gitea 的 Release API 与 GitHub 高度相似但不完全相同，
-#   附件走 multipart 的 `attachment` 字段（不是 GitHub 的 upload_url + raw body）。
+# 做的事（顺序即依赖）：
+#   1. 校验工作区干净 + 版本号三处一致（web/src/lib/version.ts / internal/version/version.go / CHANGELOG.md）
+#   2. 推 master
+#   3. 推 tag vX.Y.Z（Gitea Actions 借此触发 release 流水线）
+#   4. 轮询该 tag 的 workflow run，等它跑完（构建镜像 + 发布包 + 建 Release）
+#   5. 打印镜像地址、Release 链接、附件清单
 #
-# 用法（CI 里由 workflow 调用）：
-#   GITEA_TOKEN=xxx GITEA_API=http://host/api/v1 GITEA_REPO=owner/repo \
-#     ./scripts/release-gitea.sh v1.1.3 [附件目录，默认 dist-release]
+# 用法：
+#   GITEA_TOKEN=xxx ./scripts/release-gitea.sh [tag] 
 #
-# 幂等：Release 已存在时复用，附件同名先删后传。
+#   tag 省略时取 scripts/check_version.py --print（即当前版本号）→ v<version>
+#
+# 前置（只需做一次，见 docs/gitea-release.md）：
+#   * Gitea 已开启 Actions：[actions] ENABLED = true
+#   * act_runner 已注册且在线
+#   * git remote 里有 gitea（脚本会自动补）
+#
+# 退出码：0 成功；非 0 = 哪一步挂了（每步都有明确提示）
 set -eu
+
+# ---------- 0. 参数与校验 ----------
+GITEA_REPO_SLUG="${GITEA_REPO_SLUG:-st1341815/uart_sms_gateway}"
+GITEA_URL="${GITEA_URL:-http://127.0.0.1:3000}"
+REMOTE="${GITEA_REMOTE:-gitea}"
+
+: "${GITEA_TOKEN:?请先设置 GITEA_TOKEN（Gitea 设置 → 应用 → 生成令牌，权限勾选 repo）}"
+
+cd "$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ ! -d .git ]; then
+    echo "错误：不在 git 仓库根目录" >&2
+    exit 1
+fi
+
+if [ -n "$(git status --porcelain)" ]; then
+    echo "错误：工作区有未提交改动，先提交再发版" >&2
+    git status --short >&2
+    exit 1
+fi
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
-    echo "用法：$0 <version，例如 v1.1.3>" >&2
-    exit 1
+    RAW=$(python3 scripts/check_version.py --print)
+    case "$RAW" in
+        v*) VERSION="$RAW" ;;
+        *)  VERSION="v$RAW" ;;
+    esac
+fi
+NUM="${VERSION#v}"
+
+echo "== 发版 $VERSION =="
+
+echo "-- 版本号一致性"
+python3 scripts/check_version.py
+
+echo "-- 补 gitea remote（已存在则跳过）"
+if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
+    git remote add "$REMOTE" "${GITEA_URL}/${GITEA_REPO_SLUG}.git"
 fi
 
-: "${GITEA_TOKEN:?需要 GITEA_TOKEN}"
-: "${GITEA_API:?需要 GITEA_API，例如 http://127.0.0.1:3000/api/v1}"
-: "${GITEA_REPO:?需要 GITEA_REPO，例如 st1341815/uart_sms_gateway}"
+# token 走 URL，但只在本进程的临时 remote 里用，不写进 .git/config
+PUSH_URL=$(printf '%s' "${GITEA_URL}/${GITEA_REPO_SLUG}.git" | sed "s|://|://${GITEA_REPO_SLUG%%/*}:${GITEA_TOKEN}@|")
 
-DIST="${2:-dist-release}"
-if [ ! -d "$DIST" ]; then
-    echo "错误：找不到 $DIST 目录，请先跑 scripts/build-release.sh" >&2
-    exit 1
-fi
+echo "-- 推 master"
+GIT_TERMINAL_PROMPT=0 git push "$PUSH_URL" "HEAD:refs/heads/master"
 
-API="$GITEA_API/repos/$GITEA_REPO"
-AUTH="Authorization: token $GITEA_TOKEN"
-
-# ---------- 1. Release 正文 ----------
-# 优先取 CHANGELOG 里该版本的一节，取不到就用一句通用描述。
-BODY_FILE=$(mktemp)
-trap 'rm -f "$BODY_FILE"' EXIT
-
-python3 - "$VERSION" "$BODY_FILE" <<'PY'
-import os, re, sys
-
-version, out = sys.argv[1], sys.argv[2]
-num = version.lstrip('v')
-body = ''
-if os.path.exists('CHANGELOG.md'):
-    text = open('CHANGELOG.md', encoding='utf-8').read()
-    # 匹配 "## [1.1.3]" / "## 1.1.3" / "## v1.1.3" 开头的节，截到下一个同级标题
-    pat = re.compile(r'^##\s*\[?v?' + re.escape(num) + r'\]?.*?$', re.M)
-    m = pat.search(text)
-    if m:
-        rest = text[m.end():]
-        nxt = re.search(r'^##\s', rest, re.M)
-        body = (rest[:nxt.start()] if nxt else rest).strip()
-
-if not body:
-    body = f'版本 {num} 发布。详见仓库 CHANGELOG.md。'
-
-# 附上镜像地址与发布包清单，方便使用者直接复制
-body += '\n\n---\n\n**容器镜像**（本地 Gitea）：\n```\ndocker pull ' + \
-        os.environ.get('IMAGE_HINT', '<gitea-host>/<owner>/<repo>') + ':' + num + '\n```\n'
-
-open(out, 'w', encoding='utf-8').write(body + '\n')
-print(f'Release 正文 {len(body)} 字符')
-PY
-
-# ---------- 2. 创建（或复用）Release ----------
-echo "== 创建 Gitea Release $VERSION =="
-# 用 python 生成合法 JSON —— Release 正文是多行 markdown，手拼 JSON 一定会坏在转义上
-python3 - "$VERSION" "$BODY_FILE" > /tmp/_rel_payload.json <<'PY'
-import json, sys
-version, body_file = sys.argv[1], sys.argv[2]
-print(json.dumps({
-    'tag_name': version,
-    'name': version,
-    'body': open(body_file, encoding='utf-8').read(),
-    'draft': False,
-    'prerelease': False,
-}, ensure_ascii=False))
-PY
-
-HTTP_CODE=$(curl -sS -o /tmp/_rel.json -w '%{http_code}' \
-    -X POST "$API/releases" \
-    -H "$AUTH" -H 'Content-Type: application/json' \
-    --data-binary @/tmp/_rel_payload.json)
-
-RELEASE_ID=''
-if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-    RELEASE_ID=$(python3 -c "import json;print(json.load(open('/tmp/_rel.json')).get('id',''))")
-    echo "已创建 Release id=$RELEASE_ID"
+echo "-- 推 tag $VERSION"
+# tag 必须落在 HEAD 上，否则流水线会构建旧代码
+if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+    TAG_COMMIT=$(git rev-parse "$VERSION^{commit}")
+    HEAD_COMMIT=$(git rev-parse HEAD)
+    if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
+        echo "错误：tag $VERSION 指向 $TAG_COMMIT，但 HEAD 是 $HEAD_COMMIT" >&2
+        echo "      先 git tag -d $VERSION && git tag -a $VERSION -m '...' 重建" >&2
+        exit 1
+    fi
 else
-    echo "创建返回 HTTP $HTTP_CODE，尝试按已存在处理"
-    RELEASE_ID=$(curl -sS "$API/releases/tags/$VERSION" -H "$AUTH" \
-        | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('id',''))" 2>/dev/null || true)
-    if [ -z "$RELEASE_ID" ]; then
-        echo "错误：Release 既没建成也没查到，响应如下：" >&2
-        cat /tmp/_rel.json >&2
-        exit 1
-    fi
-    echo "复用已有 Release id=$RELEASE_ID"
+    git tag -a "$VERSION" -m "$VERSION"
 fi
+GIT_TERMINAL_PROMPT=0 git push "$PUSH_URL" "$VERSION"
 
-# ---------- 3. 上传附件（同名先删，保证幂等）----------
-echo "== 上传发布包 =="
-EXISTING=$(curl -sS "$API/releases/$RELEASE_ID/assets" -H "$AUTH" \
-    | python3 -c "import json,sys;print(' '.join(str(a['id'])+':'+a['name'] for a in json.load(sys.stdin)))" 2>/dev/null || echo "")
+# ---------- 等流水线 ----------
+API="${GITEA_URL}/api/v1/repos/${GITEA_REPO_SLUG}"
+AUTH="Authorization: token ${GITEA_TOKEN}"
 
-for f in "$DIST"/*; do
-    [ -f "$f" ] || continue
-    name=$(basename "$f")
-
-    for pair in $EXISTING; do
-        aid="${pair%%:*}"
-        aname="${pair#*:}"
-        if [ "$aname" = "$name" ]; then
-            echo "-- 删除旧附件 $name (id=$aid)"
-            curl -sS -o /dev/null -X DELETE "$API/releases/$RELEASE_ID/assets/$aid" -H "$AUTH"
-        fi
-    done
-
-    echo "-- 上传 $name ($(wc -c < "$f") 字节)"
-    code=$(curl -sS -o /tmp/_asset.json -w '%{http_code}' \
-        -X POST "$API/releases/$RELEASE_ID/assets?name=$name" \
-        -H "$AUTH" \
-        -F "attachment=@$f")
-    if [ "$code" = "201" ] || [ "$code" = "200" ]; then
-        echo "   ok"
-    else
-        echo "   失败 HTTP $code" >&2
-        cat /tmp/_asset.json >&2
-        exit 1
-    fi
+echo "-- 等待 Actions 流水线"
+RUN_ID=''
+i=1
+while [ "$i" -le 30 ]; do
+    RUN_ID=$(curl -sS "$API/actions/runs?limit=10" -H "$AUTH" \
+        | python3 -c "
+import json,sys
+tag='$VERSION'
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for r in d.get('workflow_runs', []):
+    if (r.get('head_branch') or '') == tag:
+        print(r['id']); break
+" 2>/dev/null || true)
+    [ -n "$RUN_ID" ] && break
+    sleep 2
+    i=$((i + 1))
 done
 
-echo "== Release 完成 =="
-echo "查看：${GITEA_API%/api/v1}/$GITEA_REPO/releases"
+if [ -z "$RUN_ID" ]; then
+    echo "警告：没找到 $VERSION 的流水线 run（Actions 可能没开或 runner 离线）" >&2
+    echo "      请到 ${GITEA_URL}/${GITEA_REPO_SLUG}/actions 查看" >&2
+    exit 2
+fi
+
+echo "   run id = $RUN_ID（${GITEA_URL}/${GITEA_REPO_SLUG}/actions/runs/$RUN_ID）"
+i=1
+while [ "$i" -le 150 ]; do
+    STATUS=$(curl -sS "$API/actions/runs/$RUN_ID" -H "$AUTH" \
+        | python3 -c "import json,sys;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+    case "$STATUS" in
+        completed|failure|failed|success|cancelled) break ;;
+    esac
+    printf '.'
+    sleep 4
+    i=$((i + 1))
+done
+echo
+
+CONCL=$(curl -sS "$API/actions/runs/$RUN_ID" -H "$AUTH" \
+    | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('conclusion') or d.get('status') or '')" 2>/dev/null || echo "")
+
+case "$CONCL" in
+    success)
+        echo "== 流水线成功 ==" ;;
+    *)
+        echo "== 流水线未成功（$CONCL），日志： ==" >&2
+        echo "   ${GITEA_URL}/${GITEA_REPO_SLUG}/actions/runs/$RUN_ID" >&2
+        curl -sS "$API/actions/runs/$RUN_ID/logs" -H "$AUTH" -o /tmp/_rel_logs.zip || true
+        [ -s /tmp/_rel_logs.zip ] && unzip -oq /tmp/_rel_logs.zip -d /tmp/_rel_logs 2>/dev/null && \
+            tail -40 /tmp/_rel_logs/*.log 2>/dev/null | sed 's/^/   /' >&2 || true
+        exit 3 ;;
+esac
+
+# ---------- 汇总 ----------
+echo
+echo "镜像（本机 Gitea registry）："
+echo "  docker pull ${GITEA_URL#http*://}/${GITEA_REPO_SLUG}:${NUM}"
+echo "  docker pull ${GITEA_URL#http*://}/${GITEA_REPO_SLUG}:latest"
+echo
+echo "Release："
+echo "  ${GITEA_URL}/${GITEA_REPO_SLUG}/releases/tag/${VERSION}"
+echo
+echo "附件："
+curl -sS "$API/releases/tags/$VERSION" -H "$AUTH" \
+    | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for a in d.get('assets', []):
+    print(f\"  {a['name']}  {a['size']} 字节\")
+" 2>/dev/null || echo "  （Release 详情查询失败，去网页看）"
