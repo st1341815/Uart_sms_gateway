@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
-import {ChevronLeft, Loader2, MoreVertical, Plus, RefreshCw, Search, Send, Trash2, UserRound} from 'lucide-react';
+import {ChevronDown, ChevronLeft, Loader2, MoreVertical, Plus, RefreshCw, Search, Send, Trash2, UserRound} from 'lucide-react';
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {toast} from 'sonner';
 import {clearMessages, deleteConversation, deleteMessage, getConversationMessages, getConversations} from '../api/messages';
@@ -84,6 +84,11 @@ export default function Messages() {
     // 发送设备（必选）：多卡场景下不能默认，避免从非预期号码（如境外漫游卡）发出
     const [sendDeviceId, setSendDeviceId] = useState<string>('');
     const [searchQuery, setSearchQuery] = useState('');
+    // 分组折叠：存「已折叠的设备 ID」。默认全部展开（空集），
+    // 用 Set 而不是 map[string]bool，增删都是一处，不用维护多余键。
+    // 未知设备（历史数据/已删设备）用 '__unknown__' 当键（deviceId 可能是空串，
+    // 空串语义上更接近「没有」，单列一个常量更明确）。
+    const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
     const [composeOpen, setComposeOpen] = useState(false);
     // 用户手动选择的群发设备；为空时回落到第一台在线设备（同样是派生值）。
     const [composeDeviceSelection, setComposeDeviceSelection] = useState('');
@@ -205,6 +210,33 @@ export default function Messages() {
         const rb = ib === -1 ? Number.MAX_SAFE_INTEGER : ib;
         return ra - rb;
     });
+
+    // 分组键：deviceId 可能是空串（历史数据），统一映射成常量，避免与真实 ID 撞键
+    const groupKeyOf = (deviceId: string) => deviceId || '__unknown__';
+
+    const toggleGroup = (deviceId: string) => {
+        const key = groupKeyOf(deviceId);
+        setCollapsedGroups((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) {
+                next.delete(key);
+            } else {
+                next.add(key);
+            }
+            return next;
+        });
+    };
+
+    const allCollapsed = groupedConversations.length > 0
+        && groupedConversations.every((g) => collapsedGroups.has(groupKeyOf(g.deviceId)));
+
+    const toggleAllGroups = () => {
+        if (allCollapsed) {
+            setCollapsedGroups(new Set());
+        } else {
+            setCollapsedGroups(new Set(groupedConversations.map((g) => groupKeyOf(g.deviceId))));
+        }
+    };
 
     const handleSend = (event: React.FormEvent) => {
         event.preventDefault();
@@ -359,6 +391,20 @@ export default function Messages() {
                                 className="h-9 border-transparent bg-slate-100/70 pl-9 pr-3 focus-visible:border-blue-500 focus-visible:bg-white"
                             />
                         </div>
+                        <div className="mt-2 flex items-center justify-between px-1">
+                            <span className="text-[11px] text-slate-400">
+                                {groupedConversations.length > 0 && `${groupedConversations.length} 个号码 · ${filteredConversations.length} 个会话`}
+                            </span>
+                            {groupedConversations.length > 1 && (
+                                <button
+                                    type="button"
+                                    onClick={toggleAllGroups}
+                                    className="rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-600 transition-colors hover:bg-blue-50"
+                                >
+                                    {allCollapsed ? '全部展开' : '全部折叠'}
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto">
@@ -373,8 +419,20 @@ export default function Messages() {
                                 const device = devices.find((d) => d.id === group.deviceId);
                                 return (
                                     <div key={group.deviceId || '__unknown__'}>
-                                        {/* 分组头：这张卡的名称 + 号码，一眼看出是哪个号在收发 */}
-                                        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-slate-100 bg-slate-50/95 px-4 py-2 backdrop-blur">
+                                        {/* 分组头：这张卡的名称 + 号码，一眼看出是哪个号在收发。
+                                            整行可点，点击折叠/展开该组；sticky 保证长列表滚动时分组名常驻。 */}
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleGroup(group.deviceId)}
+                                            aria-expanded={!collapsedGroups.has(groupKeyOf(group.deviceId))}
+                                            className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/95 px-3 py-2 text-left backdrop-blur transition-colors hover:bg-slate-100"
+                                        >
+                                            <ChevronDown
+                                                className={cn(
+                                                    'size-3.5 shrink-0 text-slate-400 transition-transform duration-150',
+                                                    collapsedGroups.has(groupKeyOf(group.deviceId)) && '-rotate-90',
+                                                )}
+                                            />
                                             <span className="truncate text-[11px] font-bold text-slate-600">
                                                 {group.deviceId ? (device?.name || group.deviceId) : '未标记设备'}
                                             </span>
@@ -386,9 +444,11 @@ export default function Messages() {
                                             {device && !device.connected && (
                                                 <span className="shrink-0 rounded bg-slate-200 px-1 text-[9px] text-slate-500">离线</span>
                                             )}
-                                            <span className="ml-auto shrink-0 text-[10px] text-slate-400">{group.items.length}</span>
-                                        </div>
-                                        {group.items.map((conv) => {
+                                            <span className="ml-auto shrink-0 rounded-full bg-slate-200/70 px-1.5 text-[10px] font-medium text-slate-500">
+                                                {group.items.length}
+                                            </span>
+                                        </button>
+                                        {!collapsedGroups.has(groupKeyOf(group.deviceId)) && group.items.map((conv) => {
                                             const active = selectedConvKey === convKey(conv.deviceId, conv.peer);
                                             return (
                                                 <button
@@ -423,6 +483,12 @@ export default function Messages() {
                                                 </button>
                                             );
                                         })}
+                                        {/* 折叠态给一行提示，避免分组头下面空一块看不明白 */}
+                                        {collapsedGroups.has(groupKeyOf(group.deviceId)) && (
+                                            <div className="px-4 pb-2 pt-0.5 text-[10px] text-slate-400">
+                                                已折叠 {group.items.length} 个会话
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })
