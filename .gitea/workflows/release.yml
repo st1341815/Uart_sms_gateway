@@ -54,6 +54,16 @@ jobs:
           node --version
           go version || echo "(作业容器无 go，构建都在 golang 容器里跑)"
 
+      - name: 网络自检
+        run: |
+          echo "server_url = ${GITHUB_SERVER_URL}"
+          echo "hostname   = $(hostname) / $(hostname -i 2>/dev/null || true)"
+          echo "--- ip ---"; ip -4 addr show 2>/dev/null | grep -E 'inet |^[0-9]' || true
+          echo "--- route ---"; ip route 2>/dev/null || true
+          echo "--- hosts ---"; cat /etc/hosts
+          echo "--- dns ---"; getent hosts gitea || echo "(gitea 不可解析)"
+          echo "--- 探 3000 ---"; (timeout 3 sh -c 'echo > /dev/tcp/127.0.0.1/3000' && echo "127.0.0.1:3000 通") || echo "127.0.0.1:3000 不通"
+
       - name: 检出代码（裸 git，不走 action）
         run: |
           set -e
