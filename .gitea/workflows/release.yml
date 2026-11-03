@@ -163,7 +163,7 @@ jobs:
             golang:1.25 sh -c '
               set -e
               go mod download
-              ./scripts/build-release.sh "$VERSION"
+              sh ./scripts/build-release.sh "$VERSION"
             '
           echo "----- 产物 -----"
           ls -lh dist-release/
