@@ -83,6 +83,28 @@ jobs:
           echo "GITEA_BASE=$BASE" >> "$GITHUB_ENV"
           echo "GITEA_API=$BASE/api/v1" >> "$GITHUB_ENV"
 
+          # 作业容器的工作目录是 docker 卷（不是宿主路径），所以
+          # `docker run -v "$PWD":/src` 会把宿主的空目录挂进去。
+          # 这里反查「本目录在宿主上的真实路径」，供嵌套容器 bind mount。
+          docker inspect "$(hostname)" \
+            --format '{{range .Mounts}}{{.Destination}}|{{.Source}}{{println}}{{end}}' > /tmp/mounts.txt 2>/dev/null || true
+          HOSTPWD=""
+          BEST=0
+          while IFS='|' read -r DEST SRC; do
+            [ -n "$DEST" ] || continue
+            case "$PWD/" in
+              "$DEST"/*)
+                if [ "${#DEST}" -gt "$BEST" ]; then
+                  HOSTPWD="${SRC}${PWD#"$DEST"}"
+                  BEST=${#DEST}
+                fi
+                ;;
+            esac
+          done < /tmp/mounts.txt
+          echo "宿主工作目录（HOSTPWD） = ${HOSTPWD:-<未取到>}"
+          [ -n "$HOSTPWD" ] || { echo "::error::无法反查宿主工作目录（嵌套容器拿不到源码）"; exit 1; }
+          echo "HOSTPWD=$HOSTPWD" >> "$GITHUB_ENV"
+
       - name: 检出代码（裸 git，不走 action）
         run: |
           set -e
@@ -120,7 +142,7 @@ jobs:
       - name: 构建前端（node 容器）
         run: |
           set -e
-          docker run --rm -v "$PWD":/src -w /src/web \
+          docker run --rm -v "$HOSTPWD":/src -w /src/web \
             -e NPM_REGISTRY="$NPM_REGISTRY" \
             node:22-bookworm sh -c '
               set -e
@@ -136,7 +158,7 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF#refs/tags/}"
-          docker run --rm -v "$PWD":/src -w /src \
+          docker run --rm -v "$HOSTPWD":/src -w /src \
             -e VERSION="$VERSION" -e GOPROXY="$GOPROXY" \
             golang:1.25 sh -c '
               set -e
