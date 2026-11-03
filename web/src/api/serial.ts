@@ -41,6 +41,12 @@ export const getDevicesList = async (): Promise<DevicesListResponse> => {
     return await apiClient.get<DevicesListResponse>("/devices");
 };
 
+// 修改设备显示名称（SIM 卡别名，如「联通3113」）
+// 名称存在服务端 properties 表，重启不丢；config.yaml 在容器内只读，改不到那里。
+export const renameDevice = async (deviceId: string, name: string): Promise<{ id: string; name: string }> => {
+    return await apiClient.put<{ id: string; name: string }>(`/devices/${deviceId}/name`, { name });
+};
+
 // ===== 设备控制 =====
 
 // 设置飞行模式（支持指定设备）

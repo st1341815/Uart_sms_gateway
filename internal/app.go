@@ -293,6 +293,7 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 
 	// Device API (新增)
 	api.GET("/devices", handlers.Serial.ListDevices)
+	api.PUT("/devices/:id/name", handlers.Serial.RenameDevice) // 修改 SIM 卡显示名称
 	api.GET("/devices/:id/status", handlers.Serial.GetDeviceStatus)
 	api.POST("/devices/:id/flymode", handlers.Serial.SetFlymode)
 	api.POST("/devices/:id/reboot", handlers.Serial.RebootMcu)

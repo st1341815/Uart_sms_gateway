@@ -117,13 +117,51 @@ func (h *SerialHandler) ListDevices(c echo.Context) error {
 	for _, dc := range configs {
 		devices = append(devices, map[string]any{
 			"id":          dc.ID,
-			"name":        dc.Name,
+			"name":        h.deviceManager.GetDeviceDisplayName(dc.ID),
 			"port":        dc.Port,
 			"description": dc.Description,
 			"enabled":     dc.Enabled,
 		})
 	}
 	return c.JSON(http.StatusOK, map[string]any{"devices": devices, "total": len(devices)})
+}
+
+// RenameDeviceRequest 修改设备（SIM 卡）显示名称请求
+type RenameDeviceRequest struct {
+	Name string `json:"name"`
+}
+
+// RenameDevice 修改设备显示名称（SIM 卡别名，如「联通3113」）
+//
+// PUT /api/devices/:id/name
+//
+// 名称落库到 properties 表，重启不丢；config.yaml 在容器里只读，改不了也写不回。
+func (h *SerialHandler) RenameDevice(c echo.Context) error {
+	deviceID := c.Param("id")
+	if deviceID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "缺少设备 ID"})
+	}
+
+	var req RenameDeviceRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "请求参数错误"})
+	}
+
+	name, err := h.deviceManager.RenameDevice(deviceID, req.Name)
+	if err != nil {
+		h.logger.Warn("修改设备名称失败",
+			zap.String("device_id", deviceID),
+			zap.Error(err))
+		// 校验类错误（空名/超长/设备不存在）都属于客户端问题
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"message":   "名称已修改",
+		"id":        deviceID,
+		"name":      name,
+		"device_id": deviceID,
+	})
 }
 
 // GetDeviceStatus 获取单个设备状态

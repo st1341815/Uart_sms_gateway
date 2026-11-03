@@ -1,12 +1,20 @@
 import {useState} from 'react';
 import type {ReactNode} from 'react';
-import {Activity, Loader2, MessageSquareText, RadioTower, RotateCcw, Send, Signal, Smartphone} from 'lucide-react';
+import {Activity, Loader2, MessageSquareText, Pencil, RadioTower, RotateCcw, Send, Signal, Smartphone} from 'lucide-react';
 import {Link} from 'react-router-dom';
 import {toast} from 'sonner';
-import {useMutation, useQuery} from '@tanstack/react-query';
+import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import * as serialApi from '../api/serial';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
 import {PageHeader} from '@/components/PageHeader';
@@ -65,6 +73,11 @@ export default function SerialControl() {
     const [to, setTo] = useState('');
     const [content, setContent] = useState('');
 
+    // 改名弹窗：renameTarget 为 null 表示关闭
+    const [renameTarget, setRenameTarget] = useState<{id: string; name: string} | null>(null);
+    const [renameValue, setRenameValue] = useState('');
+    const queryClient = useQueryClient();
+
     const {
         data: devicesResponse,
         isFetching: devicesFetching,
@@ -118,6 +131,42 @@ export default function SerialControl() {
         },
         onError: () => toast.error('操作失败'),
     });
+
+    // 改名：成功后让设备列表立刻刷新，同时让消息页的设备下拉也跟着更新
+    const renameMutation = useMutation({
+        mutationFn: ({id, name}: {id: string; name: string}) => serialApi.renameDevice(id, name),
+        onSuccess: async (data) => {
+            toast.success(`名称已改为「${data.name}」`);
+            setRenameTarget(null);
+            await queryClient.invalidateQueries({queryKey: ['allDevicesStatus']});
+            await queryClient.invalidateQueries({queryKey: ['devices']});
+        },
+        onError: (error: unknown) => {
+            console.error('改名失败:', error);
+            toast.error(error instanceof Error ? error.message : '改名失败');
+        },
+    });
+
+    // 打开改名弹窗：预填当前名称
+    const openRenameDialog = (device: {id: string; name: string}) => {
+        setRenameTarget(device);
+        setRenameValue(device.name);
+    };
+
+    const handleRenameSubmit = (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!renameTarget) return;
+        const next = renameValue.trim();
+        if (!next) {
+            toast.warning('名称不能为空');
+            return;
+        }
+        if (next === renameTarget.name) {
+            setRenameTarget(null);
+            return;
+        }
+        renameMutation.mutate({id: renameTarget.id, name: next});
+    };
 
     const rebootMutation = useMutation({
         mutationFn: () => serialApi.rebootMcu(selectedDeviceId),
@@ -180,37 +229,57 @@ export default function SerialControl() {
                                 const active = device.id === selectedDeviceId;
                                 const percent = signalPercent(device.signal);
                                 return (
-                                    <button
+                                    <div
                                         key={device.id}
-                                        type="button"
-                                        onClick={() => setSelectedDeviceId(device.id)}
-                                        aria-pressed={active}
                                         className={cn(
-                                            'flex min-w-0 items-center gap-3 rounded-xl border p-3 text-left transition-colors',
+                                            'group relative flex min-w-0 items-center gap-3 rounded-xl border p-3 transition-colors',
                                             active
                                                 ? 'border-blue-200 bg-blue-50/70'
                                                 : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50',
                                         )}
                                     >
-                                        <span className={cn(
-                                            'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                                            active ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500',
-                                            !device.connected && 'text-slate-400',
-                                        )}>
-                                            <Smartphone className="size-4"/>
-                                        </span>
-                                        <span className="min-w-0 flex-1">
-                                            <span className="flex items-center gap-1.5">
-                                                <span className="truncate text-sm font-semibold text-slate-900">{device.name}</span>
-                                                <span className={cn('size-1.5 shrink-0 rounded-full', device.connected ? 'bg-emerald-500' : 'bg-slate-300')}/>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedDeviceId(device.id)}
+                                            aria-pressed={active}
+                                            className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-blue-300"
+                                        >
+                                            <span className={cn(
+                                                'flex size-9 shrink-0 items-center justify-center rounded-lg',
+                                                active ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500',
+                                                !device.connected && 'text-slate-400',
+                                            )}>
+                                                <Smartphone className="size-4"/>
                                             </span>
-                                            <span className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-400">
-                                                <span className="truncate font-mono">{device.port || device.id}</span>
-                                                <span className="shrink-0">{device.connected ? `${percent}%` : '离线'}</span>
+                                            <span className="min-w-0 flex-1">
+                                                <span className="flex items-center gap-1.5">
+                                                    <span className="truncate text-sm font-semibold text-slate-900">{device.name}</span>
+                                                    <span className={cn('size-1.5 shrink-0 rounded-full', device.connected ? 'bg-emerald-500' : 'bg-slate-300')}/>
+                                                </span>
+                                                <span className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-400">
+                                                    <span className="truncate font-mono">{device.port || device.id}</span>
+                                                    <span className="shrink-0">{device.connected ? `${percent}%` : '离线'}</span>
+                                                </span>
                                             </span>
-                                        </span>
-                                        {devices.length > 1 && null}
-                                    </button>
+                                        </button>
+                                        {/* 改名入口：桌面端 hover / 键盘聚焦时显现，触屏（<sm）常显 */}
+                                        <button
+                                            type="button"
+                                            title="修改卡名称"
+                                            aria-label={`修改 ${device.name} 的名称`}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                openRenameDialog(device);
+                                            }}
+                                            className={cn(
+                                                'flex size-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition',
+                                                'hover:bg-white hover:text-blue-600',
+                                                'sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
+                                            )}
+                                        >
+                                            <Pencil className="size-3.5"/>
+                                        </button>
+                                    </div>
                                 );
                             })}
                         </div>
@@ -453,6 +522,64 @@ export default function SerialControl() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* 修改卡名称（SIM 卡别名，如「联通3113」） */}
+            <Dialog
+                open={renameTarget !== null}
+                onOpenChange={(open) => {
+                    if (!open) setRenameTarget(null);
+                }}
+            >
+                <DialogContent className="sm:max-w-md">
+                    <form onSubmit={handleRenameSubmit}>
+                        <DialogHeader>
+                            <DialogTitle>修改卡名称</DialogTitle>
+                            <DialogDescription>
+                                改的是这张卡的显示名，只影响界面；不影响设备 ID
+                                <span className="font-mono text-slate-500"> {renameTarget?.id}</span>
+                                与串口绑定。
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-1.5 py-5">
+                            <label htmlFor="rename-device-name" className="block text-sm font-medium text-slate-800">
+                                名称
+                            </label>
+                            <Input
+                                id="rename-device-name"
+                                value={renameValue}
+                                onChange={(event) => setRenameValue(event.target.value)}
+                                placeholder="例如：联通3113"
+                                maxLength={32}
+                                autoFocus
+                                className="bg-slate-50 focus:bg-white"
+                            />
+                            <p className="text-[11px] text-slate-400">
+                                最多 32 个字符，{renameValue.trim().length}/32
+                            </p>
+                        </div>
+
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setRenameTarget(null)}
+                                disabled={renameMutation.isPending}
+                            >
+                                取消
+                            </Button>
+                            <Button
+                                type="submit"
+                                className="bg-blue-600 text-white hover:bg-blue-700"
+                                disabled={renameMutation.isPending || !renameValue.trim()}
+                            >
+                                {renameMutation.isPending && <Loader2 className="size-4 animate-spin"/>}
+                                {renameMutation.isPending ? '保存中...' : '保存'}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

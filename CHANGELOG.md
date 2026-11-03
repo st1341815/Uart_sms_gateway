@@ -16,6 +16,25 @@
 
 ---
 
+## [1.1.4] — 2026-11-03
+
+串口控制页支持修改 SIM 卡名称（界面上显示的「联通3113」这类别名）。
+
+- `feat` 新增 `PUT /api/devices/:id/name`，修改设备显示名称；`DeviceManager.RenameDevice`
+  校验非空、按**字符**计长（≤32，中文不会被算成 3 倍），先落库成功再更新内存，
+  避免「界面显示新名、重启后变回旧名」。
+- `feat` 名称存 `properties` 表（`ID = device_names`，值 `map[deviceID]name`），
+  启动时加载为覆盖层。**没有走 config.yaml**：容器内它是只读挂载，程序写不回去。
+  优先级：DB 覆盖名 > `config.yaml` 的 `Name` > 设备 ID。
+- `feat` 前端 `SerialControl` 设备卡片加铅笔按钮（桌面端 hover/键盘聚焦显现，
+  触屏常显），弹窗内改名即时生效，并 invalidate `allDevicesStatus` 让消息页
+  的设备下拉一起刷新。
+- `fix` `GET /api/devices` 的 `name` 字段改走 `GetDeviceDisplayName`，
+  此前直接读 `config.DeviceConfig.Name`，会导致列表页显示旧名。
+- `build` 版本号 bump 至 1.1.4（`web/src/lib/version.ts` + `internal/version/version.go`）。
+
+---
+
 ## [未发布]
 
 构建链瘦身：CI 不再容器内重复构建前端，镜像默认只出 amd64。

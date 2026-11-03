@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/dushixiang/uart_sms_forwarder/config"
 	"github.com/dushixiang/uart_sms_forwarder/internal/models"
@@ -31,7 +33,21 @@ type DeviceManager struct {
 
 	// 定时任务状态更新器
 	scheduledTaskStatusUpdater ScheduledTaskStatusUpdater
+
+	// nameOverrides 运行时改名覆盖层：设备 ID -> 用户自定义名称
+	//
+	// 为什么不用「直接改 config.DeviceConfig.Name」：
+	//   config.yaml 在容器里是**只读挂载**（见 models/user_credential.go 的注释），
+	//   程序写不回去，改了也丢。所以自定义名称落库到 properties 表
+	//   （ID = device_names，值是 map[deviceID]name），启动时加载，运行期在内存里覆盖。
+	//   优先级：DB 覆盖名 > config.yaml 的 Name > ID。
+	nameOverrides map[string]string
+	// nameMu 只保护 nameOverrides，避免与 dm.mu 嵌套（GetAllStatus 持 dm.mu 时也要读名字）
+	nameMu sync.RWMutex
 }
+
+// PropertyIDDeviceNames 设备自定义名称的 property 键
+const PropertyIDDeviceNames = "device_names"
 
 // DeviceStatus 设备状态摘要
 type DeviceStatus struct {
@@ -64,6 +80,7 @@ func NewDeviceManager(
 		deviceConfig:    make(map[string]config.DeviceConfig),
 		order:           make([]string, 0, len(serialConfig.Devices)),
 		limiters:        newSendRateLimiters(),
+		nameOverrides:   make(map[string]string),
 		textMsgService:  textMsgService,
 		notifier:        notifier,
 		propertyService: propertyService,
@@ -158,7 +175,110 @@ func (dm *DeviceManager) Initialize() error {
 		return fmt.Errorf("没有可用的设备配置")
 	}
 
+	// 加载用户自定义的设备名称（DB 覆盖层）
+	dm.loadNameOverridesLocked()
+
 	return nil
+}
+
+// loadNameOverridesLocked 从 properties 表加载设备自定义名称。
+// 调用方必须已持有 dm.mu 写锁（Initialize 里是这么用的），故这里只碰 nameMu。
+func (dm *DeviceManager) loadNameOverridesLocked() {
+	if dm.propertyService == nil {
+		return
+	}
+
+	overrides := make(map[string]string)
+	// 配置项不存在时 GetValue 直接返回 nil（不报错），此时就是「没有任何改名」
+	if err := dm.propertyService.GetValue(context.Background(), PropertyIDDeviceNames, &overrides); err != nil {
+		dm.logger.Warn("加载设备自定义名称失败，回退到配置名称", zap.Error(err))
+		return
+	}
+
+	dm.nameMu.Lock()
+	dm.nameOverrides = overrides
+	dm.nameMu.Unlock()
+
+	if len(overrides) > 0 {
+		dm.logger.Info("已加载设备自定义名称", zap.Int("count", len(overrides)))
+	}
+}
+
+// displayName 计算设备的最终显示名：DB 覆盖名 > config.yaml 的 Name > ID。
+// 不加锁，由调用方保证不持有 nameMu。
+func (dm *DeviceManager) displayName(id, configName string) string {
+	dm.nameMu.RLock()
+	custom, hasCustom := dm.nameOverrides[id]
+	dm.nameMu.RUnlock()
+
+	if hasCustom && custom != "" {
+		return custom
+	}
+	if configName != "" {
+		return configName
+	}
+	return id
+}
+
+// GetDeviceDisplayName 获取设备的最终显示名（供 Handler 复用）
+func (dm *DeviceManager) GetDeviceDisplayName(id string) string {
+	dm.mu.RLock()
+	dc := dm.deviceConfig[id]
+	dm.mu.RUnlock()
+	return dm.displayName(id, dc.Name)
+}
+
+// RenameDevice 修改设备显示名称（落库，重启不丢）
+//
+// 校验：
+//   - 设备必须存在（避免给不存在的 ID 写入脏数据）
+//   - 名称去空格后不能为空，且不宜过长（前端也限制，这里兜底）
+func (dm *DeviceManager) RenameDevice(id, name string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("必须指定设备 ID")
+	}
+
+	dm.mu.RLock()
+	_, exists := dm.deviceConfig[id]
+	dm.mu.RUnlock()
+	if !exists {
+		return "", fmt.Errorf("设备不存在: %s（可选: %v）", id, dm.GetAllDeviceIDs())
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("名称不能为空")
+	}
+	// 按「字符」而不是字节计长度，避免中文被算成 3 倍
+	if utf8.RuneCountInString(name) > 32 {
+		return "", fmt.Errorf("名称过长（最多 32 个字符）")
+	}
+
+	// 复制一份再改，避免把正在被读的 map 原地写坏
+	dm.nameMu.Lock()
+	next := make(map[string]string, len(dm.nameOverrides)+1)
+	for k, v := range dm.nameOverrides {
+		next[k] = v
+	}
+	next[id] = name
+	dm.nameMu.Unlock()
+
+	if dm.propertyService != nil {
+		if err := dm.propertyService.Set(context.Background(), PropertyIDDeviceNames, "设备自定义名称", next); err != nil {
+			return "", fmt.Errorf("保存设备名称失败: %w", err)
+		}
+	}
+
+	// 只有落库成功才更新内存，保证「显示的名字」与「重启后的名字」一致
+	dm.nameMu.Lock()
+	dm.nameOverrides = next
+	dm.nameMu.Unlock()
+
+	dm.logger.Info("设备名称已更新",
+		zap.String("id", id),
+		zap.String("name", name))
+
+	return name, nil
 }
 
 // StartAll 启动所有设备服务
@@ -241,7 +361,7 @@ func (dm *DeviceManager) GetAllStatus() []*DeviceStatus {
 
 		ds := &DeviceStatus{
 			ID:        id,
-			Name:      deviceConfig.Name,
+			Name:      dm.displayName(id, deviceConfig.Name),
 			Port:      deviceConfig.Port,
 			Connected: status.Connected,
 			Flymode:   status.Flymode,
@@ -276,7 +396,7 @@ func (dm *DeviceManager) GetDeviceStatus(id string) (*DeviceStatus, error) {
 	status, err := ss.GetStatus()
 	ds := &DeviceStatus{
 		ID:        id,
-		Name:      dc.Name,
+		Name:      dm.displayName(id, dc.Name),
 		Port:      dc.Port,
 		Connected: status.Connected,
 		Flymode:   status.Flymode,
