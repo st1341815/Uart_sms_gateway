@@ -4,9 +4,12 @@ name: Release (Gitea)
 #
 # 触发：推送 v* tag
 # 产出：
-#   1) 容器镜像（默认仅 linux/amd64）→ Gitea 内置容器仓库
-#      需要 arm64 时把 env.IMAGE_PLATFORMS 改成 linux/amd64,linux/arm64
-#      （代价很大：arm64 阶段走 QEMU 模拟，首次构建可能几十分钟）
+#   1) 容器镜像（仅 linux/amd64）→ Gitea 内置容器仓库
+#      构建方式是普通 docker build + docker push，不走 buildx。
+#      2026-11-03 连续 5 次失败后放弃 buildx：它在这套环境里额外引入
+#      buildkit 容器 netns / network=host / insecure registry 三层网络语义，
+#      而单平台构建完全用不上它的多平台能力（详见「构建并推送镜像」步骤注释）。
+#      要恢复多平台，先解决那三层问题，再考虑搬回 buildx。
 #   2) 二进制发布包（仅 linux/amd64）→ dist-release/*.tar.gz + SHA256SUMS
 #      2026-11-03 按用户要求收窄到单一平台：部署目标就是 x86 服务器，
 #      其余平台产物从来没人下载，却让每次发版多花 5 次交叉编译。
@@ -75,7 +78,7 @@ jobs:
           echo "image(pull)   = ${IMAGE_HINT}"
           echo "workspace = $PWD"
           docker version --format '  docker {{.Server.Version}}'
-          docker buildx version || true
+          # 不再打印 buildx 版本：流水线已改回普通 docker build（见「构建并推送镜像」步骤）。
           git --version
           node --version
           go version || echo "(作业容器无 go，构建都在 golang 容器里跑)"
@@ -220,89 +223,48 @@ jobs:
           TOKEN="${{ secrets.RELEASE_TOKEN }}"
           [ -n "$TOKEN" ] || { echo "::error::缺少仓库 secret RELEASE_TOKEN"; exit 1; }
 
-          # 不调 docker login：作业容器里的 127.0.0.1 是它自己，登录不上去；
-          # 这里直接把凭证写进 client 的 config.json，buildx 会把它带给 buildkit。
-          mkdir -p "$HOME/.docker"
-          printf '{"auths":{"%s":{"auth":"%s"}}}' "$IMAGE_REPO" \
-            "$(printf '%s' "${REPO_OWNER}:${TOKEN}" | base64 -w0)" | sed 's/[[:space:]]*$//' \
-            > "$HOME/.docker/config.json"
-          chmod 600 "$HOME/.docker/config.json"
-
-          # docker-container driver + network=host：manifest list 必需（dockerd 的
-          # docker driver 不支持多平台 manifest），host 网络才能解析 127.0.0.1:3000。
-          # buildkitd.toml 让 buildkit 的 docker.io 走国内镜像源（直连会 EOF）。
+          # ⚠️ 这里刻意用普通 docker build + docker push，不走 buildx。
           #
-          # ⚠️ 只有 builder 不存在时才 create。以前每次都 rm + create，
-          #    等于每次发版都把 buildkit 的层缓存/thx 缓存全丢掉，白跑一遍
-          #    go mod download 和编译（2026-11-03 实测这是次要慢因）。
-          # 注意：act_runner 每个作业都是新容器，~/.docker/buildx 里的 builder
-          # 注册记录不持久；但 buildkit 的缓存卷（buildx_buildkit_gitea-builder0_state）
-          # 在宿主上，删容器不删卷 → 重新 create 会自动挂回同名卷，缓存仍在。
-          create_builder() {
-            docker buildx create --name gitea-builder \
-              --driver docker-container \
-              --driver-opt network=host \
-              --buildkitd-config scripts/buildkitd.toml
-          }
-          if docker buildx inspect gitea-builder >/dev/null 2>&1; then
-            echo "复用已有 builder 注册: gitea-builder"
-          else
-            # 注册记录丢了但 buildkit 容器可能还在（同名容器会让 create 报错）
-            # → 先删容器（保留 *_state 卷，缓存不丢）再重建
-            create_builder || {
-              echo "create 报错（大概率残留同名容器），清理后重试"
-              docker rm -f buildx_buildkit_gitea-builder0 >/dev/null 2>&1 || true
-              create_builder
-            }
-          fi
-          docker buildx use gitea-builder
-
-          # 推送前确认 registry 真的可达。
+          # 失败史（2026-11-03，run 94 起连续 5 次失败）：
+          #   run 94/95/96  failed to fetch oauth token: dial tcp 127.0.0.1:3000:
+          #                 connect: connection refused
+          #   run 97        Head "https://172.20.0.1:3000/v2/...":
+          #                 http: server gave HTTP response to HTTPS client
+          #   run 98        探活 30 次全未过，诊断报 no such object: buildx_buildkit_*
           #
-          # 探测的就是 IMAGE_REPO 的主机部分 —— 探针和实际 push 必须打同一个地址，
-          # 否则会出现「探活通过、push 照样 failure」的假绿灯（run 96 就是这么翻车的：
-          # 探 127.0.0.1 通过，push 走另一条路径被拒）。
+          # 根因是 buildx 在这套环境里多引入了一整个独立网络栈：
+          #   - docker-container driver 会另起 buildkit 容器，它的 netns 与
+          #     作业容器不是一回事，127.0.0.1 语义随之改变；
+          #   - 该容器还要靠 network=host + buildkitd.toml 单独声明 insecure
+          #     registry，才能碰明文 HTTP 的 Gitea；
+          #   - builder 注册信息存在作业容器内的 ~/.docker/buildx，job 一结束
+          #     即销毁，于是每次都要重建 buildkit 容器（层缓存其实也没留住）。
+          # 换句话说：多平台能力一点没用上，却背了三层额外的网络语义。
           #
-          # 注意 probe 的局限：docker exec 进的是容器 netns，和 buildkitd 发起
-          # push 时的路径未必一致。所以它只能拦住「地址填错 / 服务没起」这类
-          # 明显故障，不能证明 push 一定成功 —— 真正的判据是最后 buildx build 的退出码。
-          REGISTRY_HOST="${IMAGE_REPO%%/*}"
-          echo "-- 等待 registry 就绪：${REGISTRY_HOST}"
-          READY=0
-          for i in $(seq 1 30); do
-            if docker exec buildx_buildkit_gitea-builder0 \
-                 wget -qO- -T 3 "http://${REGISTRY_HOST}/api/v1/version" >/dev/null 2>&1; then
-              echo "   buildkit 已连通 registry（第 ${i} 次探测）"
-              READY=1
-              break
-            fi
-            echo "   第 ${i} 次探测未通，1s 后重试"
-            sleep 1
-          done
-          if [ "$READY" != 1 ]; then
-            echo "::error::buildkit 容器 30s 内连不上 ${REGISTRY_HOST}（Gitea registry）"
-            echo "-- 诊断：容器网络模式"
-            docker inspect buildx_buildkit_gitea-builder0 \
-              --format 'NetworkMode={{.HostConfig.NetworkMode}} Status={{.State.Status}}'
-            echo "-- 诊断：容器内看该地址的连通性"
-            docker exec buildx_buildkit_gitea-builder0 \
-              sh -c "wget -qO- -T 3 http://${REGISTRY_HOST}/api/v1/version || echo '(不通)'" || true
-            exit 1
-          fi
+          # 当前只需要 linux/amd64 单平台，普通 docker build 完全够用，
+          # 而且它和后面 docker push 共用同一个 daemon 网络 ——
+          # 地址怎么通，推的时候就是怎么通，不存在「探针通了 push 不通」。
 
-          echo "目标平台 = ${IMAGE_PLATFORMS}"
-          docker buildx build \
-            --platform "${IMAGE_PLATFORMS}" \
+          # 用 docker login 而不是手写 config.json：之前手写是为了把凭证塞给
+          # buildkit；现在没有 buildkit 了，让 daemon 自己管凭证更直接。
+          printf '%s' "$TOKEN" \
+            | docker login "${IMAGE_REPO%%/*}" -u "$REPO_OWNER" --password-stdin
+
+          docker build \
             -f Dockerfile.multi \
             --build-arg "GOPROXY=${GOPROXY}" \
             --build-arg "NPM_REGISTRY=${NPM_REGISTRY}" \
             --build-arg "WEB_PREBUILT=1" \
             -t "${IMAGE_REPO}:${VERSION}" \
             -t "${IMAGE_REPO}:latest" \
-            --push .
+            .
+
+          docker push "${IMAGE_REPO}:${VERSION}"
+          docker push "${IMAGE_REPO}:latest"
 
           echo "镜像已推送：${IMAGE_REPO}:${VERSION}"
-          docker buildx imagetools inspect "${IMAGE_REPO}:${VERSION}" | head -20
+          docker image inspect "${IMAGE_REPO}:${VERSION}" \
+            --format '镜像 {{.Id}} 架构 {{.Architecture}} 大小 {{.Size}}'
 
       - name: 创建 Release 并上传发布包
         run: |
