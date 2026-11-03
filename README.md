@@ -15,11 +15,11 @@
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-13uncle%2Fuart__sms__gateway-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/13uncle/uart_sms_gateway)
 [![GHCR](https://img.shields.io/badge/GHCR-st1341815%2Fuart__sms__gateway-181717?logo=github&logoColor=white)](https://github.com/st1341815/Uart_sms_gateway/pkgs/container/uart_sms_gateway)
 
-```bash
+bash
 docker pull 13uncle/uart_sms_gateway:latest
 # 或
 docker pull ghcr.io/st1341815/uart_sms_gateway:latest
-```
+
 
 </div>
 
