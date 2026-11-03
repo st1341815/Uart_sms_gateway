@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import {useQuery} from '@tanstack/react-query';
 import {toast} from 'sonner';
-import {APP_VERSION} from '@/lib/version.ts';
+import {APP_REPO_URL, APP_VERSION} from '@/lib/version.ts';
 import {getAllDevicesStatus} from '@/api/serial.ts';
 import type {AllDevicesStatusResponse} from '@/api/types.ts';
 import {cn} from '@/lib/utils.ts';
@@ -167,8 +167,9 @@ export default function Layout() {
                         <RadioTower className={cn('size-4', allOnline ? 'text-blue-300' : 'text-blue-200/40')}/>
                     </div>
                 </div>
-                {/* 退出登录在上、版本号在下：两者并排时「UART SMS Gateway v1.1.0」
-                    会把「退出登录」挤出侧栏（248px 装不下），所以拆成两行。 */}
+                {/* 退出登录在上、版本号在下（两行）。
+                    并排时「UART SMS Gateway v1.1.0」会把「退出登录」挤出 248px 的侧栏；
+                    版本号独占一行后宽度够用，同时作为 GitHub 仓库入口。 */}
                 <div className="space-y-1 px-1">
                     <button
                         type="button"
@@ -178,12 +179,15 @@ export default function Layout() {
                         <LogOut className="size-3.5"/>
                         退出登录
                     </button>
-                    <p
-                        className="text-center font-mono text-[10px] tracking-wide text-blue-100/45"
-                        title={`UART SMS Gateway v${APP_VERSION}`}
+                    <a
+                        href={APP_REPO_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`UART SMS Gateway v${APP_VERSION} · 在 GitHub 上查看源码`}
+                        className="block truncate text-center font-mono text-[10px] tracking-wide text-blue-100/45 transition hover:text-blue-100/80 hover:underline"
                     >
-                        v{APP_VERSION}
-                    </p>
+                        UART SMS Gateway v{APP_VERSION}
+                    </a>
                 </div>
             </div>
         </div>
