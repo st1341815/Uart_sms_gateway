@@ -7,6 +7,7 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {PageHeader} from '@/components/PageHeader';
+import {SmsResetPasswordCard} from '@/components/SmsResetPasswordCard';
 import {changePassword, getMe} from '../api/auth';
 import {cn} from '@/lib/utils';
 
@@ -134,6 +135,14 @@ export default function ChangePassword() {
         setConfirmPassword('');
     };
 
+    // 短信重置成功后旧密码已失效，当前 token 必须清掉并重新登录
+    const handleSmsResetSuccess = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('expiresAt');
+        localStorage.removeItem('username');
+        setTimeout(() => navigate('/login', {replace: true}), 1200);
+    };
+
     return (
         <div>
             <PageHeader
@@ -142,6 +151,7 @@ export default function ChangePassword() {
             />
 
             <div className="mt-6 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.55fr)]">
+                <div className="grid gap-4">
                 <Card className="gap-0 py-0">
                     <CardHeader className="border-b border-slate-100 py-5">
                         <div className="flex items-center justify-between gap-4">
@@ -232,6 +242,9 @@ export default function ChangePassword() {
                     </CardContent>
                 </Card>
 
+                    <SmsResetPasswordCard onResetSuccess={handleSmsResetSuccess}/>
+                </div>
+
                 <div className="grid gap-4">
                     <Card className="gap-0 py-0">
                         <CardHeader className="border-b border-slate-100 py-4">
@@ -258,7 +271,11 @@ export default function ChangePassword() {
                         <div className="text-xs leading-6 text-amber-900">
                             <p className="font-semibold">忘记当前密码怎么办</p>
                             <p className="mt-1 text-amber-800">
-                                可在服务器上编辑 <code className="rounded bg-amber-100 px-1">config.yaml</code> 的{' '}
+                                如果还能登录，直接用左侧的「短信重置密码」——新密码会发到你手机上。
+                            </p>
+                            <p className="mt-1.5 text-amber-800">
+                                如果连登录都进不去，只能在服务器上编辑{' '}
+                                <code className="rounded bg-amber-100 px-1">config.yaml</code> 的{' '}
                                 <code className="rounded bg-amber-100 px-1">Users</code> 字段重新初始化
                                 （仅当数据库中该用户记录不存在时才会生效）。
                             </p>

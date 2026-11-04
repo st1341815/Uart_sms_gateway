@@ -67,3 +67,46 @@ export const getMe = (): Promise<MeResponse> => {
 export const changePassword = (req: ChangePasswordRequest): Promise<ChangePasswordResponse> => {
     return apiClient.post('/auth/password', req);
 };
+
+// ===== 短信重置密码 =====
+
+// 安全手机号（只回显脱敏值，后端不返回完整号码）
+export interface ResetPhoneResponse {
+    phone_set: boolean;
+    masked_phone?: string;
+}
+
+export interface SetResetPhoneResponse {
+    message: string;
+    masked_phone: string;
+}
+
+export interface ResetBySMSRequest {
+    device_id: string;
+    // 留空则使用已保存的安全手机号
+    phone?: string;
+}
+
+export interface ResetBySMSResponse {
+    message: string;
+    masked_phone: string;
+    device_id: string;
+    device_name: string;
+    sent_at: number;
+    require_relogin?: boolean;
+}
+
+// 读取已保存的安全手机号
+export const getResetPhone = (): Promise<ResetPhoneResponse> => {
+    return apiClient.get('/auth/password-reset/phone');
+};
+
+// 保存安全手机号
+export const setResetPhone = (phone: string): Promise<SetResetPhoneResponse> => {
+    return apiClient.put('/auth/password-reset/phone', {phone});
+};
+
+// 生成新密码并通过短信下发（不校验旧密码）
+export const resetPasswordBySMS = (req: ResetBySMSRequest): Promise<ResetBySMSResponse> => {
+    return apiClient.post('/auth/password-reset/sms', req);
+};

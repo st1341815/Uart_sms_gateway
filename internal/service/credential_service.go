@@ -164,13 +164,40 @@ func (s *CredentialService) ChangePassword(ctx context.Context, username, oldPas
 		return fmt.Errorf("新密码不能与当前密码相同")
 	}
 
-	// 4. 生成新哈希
+	// 4. 落库 + 刷内存
+	if err := s.persistPassword(ctx, username, newPassword); err != nil {
+		return err
+	}
+
+	s.logger.Info("管理员口令已修改", zap.String("username", username))
+	return nil
+}
+
+// ResetPassword 直接设置新口令，不校验旧口令。
+//
+// 仅供「已通过其他途径确认过身份」的路径使用，目前唯一调用方是
+// PasswordResetService（短信重置：要求持有已登录会话 + 手机能收到短信）。
+// 普通改密必须走 ChangePassword —— 那条路会校验旧口令。
+func (s *CredentialService) ResetPassword(ctx context.Context, username, newPassword string) error {
+	if !s.HasUser(username) {
+		return fmt.Errorf("用户不存在")
+	}
+	if err := validatePasswordStrength(newPassword); err != nil {
+		return err
+	}
+	return s.persistPassword(ctx, username, newPassword)
+}
+
+// persistPassword 生成哈希、写库、更新内存缓存。
+// ChangePassword 与 ResetPassword 共用，避免两处落库逻辑各写一遍后走样。
+func (s *CredentialService) persistPassword(ctx context.Context, username, newPassword string) error {
+	// 1. 生成新哈希
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
 	if err != nil {
 		return fmt.Errorf("生成密码哈希失败: %w", err)
 	}
 
-	// 5. 写库（存在则更新）
+	// 2. 写库（存在则更新）
 	now := time.Now().UnixMilli()
 	row := &models.UserCredential{
 		Username:     username,
@@ -187,12 +214,11 @@ func (s *CredentialService) ChangePassword(ctx context.Context, username, oldPas
 		return fmt.Errorf("保存新密码失败: %w", err)
 	}
 
-	// 6. 更新内存缓存
+	// 3. 更新内存缓存
 	s.mu.Lock()
 	s.hashes[username] = string(hash)
 	s.mu.Unlock()
 
-	s.logger.Info("管理员口令已修改", zap.String("username", username))
 	return nil
 }
 

@@ -123,7 +123,9 @@ func setup(app *orz.App) error {
 
 	// 10. 初始化 Handler
 	authHandler := handler.NewAuthHandler(logger, accountService)
-	credentialHandler := handler.NewCredentialHandler(logger, accountService)
+	// 短信重置密码：凭「已登录会话 + 手机收到短信」下发新口令
+	passwordResetService := service.NewPasswordResetService(logger, credentialService, deviceManager, propertyService)
+	credentialHandler := handler.NewCredentialHandler(logger, accountService, passwordResetService)
 
 	// 11. 开放接口（AK/SK 签名）
 	apiKeyService, err := service.NewAPIKeyService(logger, db, appConfig.JWT.Secret)
@@ -256,6 +258,10 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 	// 当前用户 / 修改密码
 	api.GET("/auth/me", handlers.Credential.Me)
 	api.POST("/auth/password", handlers.Credential.ChangePassword)
+	// 短信重置密码：安全手机号读写 + 触发重置
+	api.GET("/auth/password-reset/phone", handlers.Credential.GetResetPhone)
+	api.PUT("/auth/password-reset/phone", handlers.Credential.SetResetPhone)
+	api.POST("/auth/password-reset/sms", handlers.Credential.ResetPasswordBySMS)
 
 	// 开放接口管理（Key / 模板 / 调用日志）
 	api.GET("/openapi/keys", handlers.OpenAPIAdmin.ListKeys)
