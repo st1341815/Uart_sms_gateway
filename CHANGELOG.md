@@ -5,11 +5,16 @@
 - 次版本：新增功能（新页面、新接口、新 UI 元素），向后兼容
 - 主版本：破坏性变更（配置格式、API 协议、数据库结构不兼容）
 
-**每次发版必须同时做三件事**（`scripts/check_version.py` 会检查）：
+**每次发版必须同时做四件事**（`scripts/check_version.py` 会检查前三件）：
 
 1. 改 `web/src/lib/version.ts` 的 `APP_VERSION`
 2. 改 `internal/version/version.go` 的 `Version` 默认值
 3. 在本文件**顶部**加一节 `## [x.y.z] — YYYY-MM-DD`
+4. 建 GitHub Release，**标题统一为 `UART SMS Gateway vX.Y.Z`**
+
+> Release 标题只放「项目名 + 版本号」，不要往里塞功能描述——
+> 那是正文第一行的事。标题会在 releases 列表里并排显示，长短不一很难扫读。
+> （2026-11-04 统一过一次：此前是 `v1.1.8 — 移动端短信中心修复` 这类带副标题的写法。）
 
 > 历史教训：1.1.0 之后连续发了 2 个版本却没改版本号，侧边栏一直显示 v1.1.0，
 > 与实际部署的代码对不上（用户发现）。此文件就是为此建立。
