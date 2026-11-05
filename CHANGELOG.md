@@ -21,6 +21,33 @@
 
 ---
 
+## [1.2.5] — 2026-11-05
+
+**计划任务页与全站视觉对齐**：修正页头、字号、颜色三处偏差，另修掉一个深色主题 bug。
+
+- `fix`（bug）`ScheduledTasksConfig.tsx` 卡片头写死了
+  `bg-gradient-to-br from-white to-surface/30` —— 全站唯一一处 `from-white`。
+  浅色主题下看不出来，**深色主题下卡片头会从纯白渐变到深色，非常刺眼**。
+  改为 `bg-surface-2`。
+- `fix` 手写页头换成统一 `PageHeader`：原为 `text-2xl`（24px），且
+  `bg-gradient-to-r from-brand to-brand bg-clip-text text-transparent` 首尾同色、
+  渐变实际无效，还带着「打印/高对比度模式下文字消失」的风险。
+  替换后统一为 22px + `tracking-[-0.02em]`，与其余 6 个页面一致。
+- `fix` 字号回到全站基准。实测全站主力档位是 `text-xs`(12px) 77 处 +
+  `text-sm`(14px) 46 处，`text-[10px]`/`[11px]` 等自定义 px 只是零星微调。
+  真正的偏差只有三处大档：
+  - 卡片标题 `text-base`(16px) → `text-sm`(14px)（全站 `CardTitle` 以 `text-sm` 为主）
+  - 弹窗标题 `text-xl`(20px) → 组件默认 `text-lg`(18px)（其余 3 处 `<DialogTitle>` 均不带字号）
+  - 页面标题 24px → 22px（由第一项 `PageHeader` 接管）
+- `fix` 硬编码绿/红改成语义 token：`text-green-600` / `bg-green-50` /
+  `text-red-600` / `bg-red-50` / `bg-green-500` →
+  `text-ok` / `bg-ok/10` / `text-err` / `bg-err/10` / `bg-ok`；
+  悬停态 `hover:bg-green-50 hover:border-green-300 hover:text-green-700` →
+  `hover:bg-ok/10 hover:border-ok/40 hover:text-ok`，删除按钮 `hover:bg-red-700` →
+  `hover:bg-err/90`，必填星号与内容提示统一到 `text-err`。
+- `chore` `w-N h-N` → `size-N`（8 处），间隔天数与手机号改用 `.num`
+  （等宽 + `tabular-nums`，数字不跳动）。
+
 ## [1.2.4] — 2026-11-05
 
 **概览页手机端横向溢出的真正根因**：裸 `grid` 的隐式 track 宽度是 `auto`。
