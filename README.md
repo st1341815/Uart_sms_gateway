@@ -298,28 +298,68 @@ make version                  # 打印当前版本号
 
 ### 6. 发版流程
 
-发版走 **GitHub**：推 `master` + 推 `vX.Y.Z` tag，然后在 GitHub 上建 Release
-并挂发布包。
+发版走 **GitHub**。原来这一套要手敲十几条 `ssh` / `docker` / `git` 命令，
+现在固化成了一条命令（`scripts/release.sh`，Makefile 里叫 `make release`）：
 
 ```bash
-make bump-version V=1.2.1        # 改号 + CHANGELOG 插入占位节
-$EDITOR CHANGELOG.md             # 补写这一版改了什么
-git commit -am "chore: 版本号升到 1.2.1"
+# 1) 改版本号（三处一起改，再补 CHANGELOG）
+make bump-version V=1.4.2
+$EDITOR CHANGELOG.md
 
-git push origin master
-git tag -a v1.2.1 -m "v1.2.1 — <一句话概括>" && git push origin v1.2.1
+# 2) 一条命令走完全流程
+GITHUB_TOKEN=ghp_xxx make release
 ```
+
+脚本按 9 个阶段执行，任一步失败即停下并给出可操作的提示：
+
+| 阶段 | 做什么 | 失败时 |
+|---|---|---|
+| 1 预检 | 版本三处一致、依赖命令、远程 SSH + docker compose、工作区是否干净 | 直接退出，不产生任何副作用 |
+| 2 前端 | `npm run build` → `make prepare-embed`，校验 `web/embed_dir/index.html` | 停 |
+| 3 同步 | tar 打包源码（排除 `node_modules`/`dist`/`.git`/`bin`）→ `scp` → 远端解包到 `.build-$VERSION` | 停，不碰线上 |
+| 4 构建 | 远端 `docker build -f Dockerfile.multi --build-arg WEB_PREBUILT=1` | 打印日志末尾 30 行 |
+| 5 部署 | 记下当前镜像 tag → 打回滚点 `pre-$VERSION` → 备份 compose → 切镜像 → `compose up -d` | — |
+| 6 验证 | 轮询 `/health`（20 × 2s），再 `docker inspect` 核对运行镜像 | **自动回滚**到上一版并重启 |
+| 7 tag | `git tag -a v$VERSION` | 已存在且指向别的 commit 时拒绝覆盖 |
+| 8 推送 | push 分支 + tag，再用 GitHub API 建 Release | `422 already_exists` 视为已存在，跳过 |
+| 9 清理 | 删远端 `.build-$VERSION` 与本地 tar 包 | — |
+
+常用参数：
+
+```bash
+./scripts/release.sh --dry-run              # 只演练，不构建不部署不推送
+./scripts/release.sh --skip-publish         # 构建 + 部署，但不推 GitHub
+./scripts/release.sh --skip-build           # 复用远端已有构建目录（调试用）
+./scripts/release.sh --commit "说明"        # 工作区脏时代提交，保证 tag 与内容一致
+./scripts/release.sh --version 1.4.2        # 不读文件里的版本号，显式指定
+```
+
+默认配置（全部可用环境变量覆盖）：
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `REMOTE_HOST` | `s21` | 构建/部署机（ssh config 别名或 `user@ip`） |
+| `SSH_CONFIG` | `$HOME/.ssh/config`（存在则用） | 见下方踩坑注记 |
+| `REMOTE_DIR` | `/home/unit3/sms-multi` | 线上部署目录 |
+| `CONTAINER` | `sms-multi` | 容器名 |
+| `IMAGE_REPO` | `smstext-multi-device` | 镜像仓库名 |
+| `HEALTH_URL` | `http://$REMOTE_HOST:8080/health` | 健康检查地址 |
+
+> **本机踩坑：OpenSSH 不读 `$HOME/.ssh/config`。** 它按 passwd 里记录的 home 找配置，
+> 而本机 `HOME` 已被 Octop 挪到 `/vol1/@appshare/octop-native/data`，
+> 于是 `ssh s21` 直接报 `Could not resolve hostname`。脚本因此默认加 `-F $HOME/.ssh/config`
+> 兜底；`git push` 走 `https + token`，不受影响。
+
+> **防呆：** 工作区不干净会直接拒绝发版——否则 tag 指向的 commit 和实际构建的源码对不上，
+> 事后回溯版本会完全错乱。急用时用 `--commit "说明"` 让脚本代提交。
 
 仓库：<https://github.com/st1341815/Uart_sms_gateway>
 
-本地产出（不经 CI，手工执行）：
+另外，二进制发布包仍单独出（脚本只管 Docker，不发二进制）：
 
 ```bash
-# 二进制发布包 → dist-release/（含 SHA256SUMS）
-VERSION=v1.2.1 ./scripts/build-release.sh
-
-# 容器镜像（linux/amd64）
-docker build -f Dockerfile.multi --build-arg WEB_PREBUILT=0 -t uart_sms_gateway:1.2.1 .
+# → dist-release/（含 SHA256SUMS）
+VERSION=v1.4.2 ./scripts/build-release.sh
 ```
 
 > 曾经有一套「推 tag → 本地 Gitea Actions 自动出镜像 + 发布包 + Release」的流水线，
