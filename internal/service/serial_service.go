@@ -66,9 +66,14 @@ type SerialService struct {
 	// 第一个状态帧），0 = 离线，1 = 在线。首次状态帧只记录不通知——否则每次
 	// 重启服务都会误推一条"SIM 卡上线"。
 	simOnline atomic.Int32
-	// lastSimNotifyAt 最近一次推送的时间戳（Unix 秒），用于冷却去抖：
-	// 模块重连、信号抖动会让状态帧在短时间内反复翻转，没有冷却会刷屏。
-	lastSimNotifyAt atomic.Int64
+	// 上下线各自独立计时（Unix 秒）。
+	//
+	// 早期版本共用一个 lastSimNotifyAt，结果「掉线 → 21 秒后恢复」这种
+	// 真实事件里，上线通知被掉线的冷却窗口吞掉——而掉线后很快恢复恰恰是
+	// 最该完整成对的场景（一次中断的始末）。按方向分别计时后，
+	// 同方向的抖动仍被抑制，反方向的成对事件不再互相干扰。
+	lastOnlineNotifyAt  atomic.Int64
+	lastOfflineNotifyAt atomic.Int64
 }
 
 // NewSerialService 创建串口服务实例（兼容旧模式）

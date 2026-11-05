@@ -9,11 +9,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// simNotifyCooldown 同一设备两次 SIM 状态通知的最小间隔。
+// simNotifyCooldown 同一方向（上线、掉线各自独立）两次通知的最小间隔。
 //
-// 模块重连、漫游切换、射频抖动都会让状态帧在几十秒内反复翻转。
-// 没有冷却的话，一次真实掉线会被刷成十几条通知，告警反而没人看。
-const simNotifyCooldown = 90 * time.Second
+// 定 20 秒的依据：模块重连抖动通常只持续数秒，20 秒足以压住；
+// 而实测「飞行模式开关一次」的掉线→恢复往返约 21 秒，90 秒的旧值会把
+// 紧随其后的上线通知一并吞掉——掉线后很快恢复恰恰是最该完整成对的场景。
+const simNotifyCooldown = 20 * time.Second
 
 // checkSimStatusChange 比较本次状态帧与上次观测到的注册状态，变化时推送通知。
 //
@@ -69,15 +70,21 @@ func (s *SerialService) notifySimStatus(online bool, st *StatusData) {
 	}
 
 	now := time.Now()
-	if last := s.lastSimNotifyAt.Load(); last > 0 {
+	// 按方向取各自的计时器：掉线的冷却不该拦住随后的上线通知
+	lastAt := &s.lastOfflineNotifyAt
+	if online {
+		lastAt = &s.lastOnlineNotifyAt
+	}
+	if last := lastAt.Load(); last > 0 {
 		if since := now.Sub(time.Unix(last, 0)); since < simNotifyCooldown {
-			s.logger.Debug("SIM 状态通知处于冷却期，跳过",
+			s.logger.Info("SIM 状态通知处于冷却期，跳过",
 				zap.String("device_id", s.deviceID),
+				zap.Bool("online", online),
 				zap.Duration("since_last", since))
 			return
 		}
 	}
-	s.lastSimNotifyAt.Store(now.Unix())
+	lastAt.Store(now.Unix())
 
 	msgType := "sim_offline"
 	if online {
