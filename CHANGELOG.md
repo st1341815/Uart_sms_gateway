@@ -21,6 +21,20 @@
 
 ---
 
+## [1.4.1] — 2026-11-06
+
+**构建提速**：`Dockerfile.multi` 挂上 BuildKit 编译缓存，改代码后重新构建从
+约 2 分钟降到几十秒。
+
+- `build` `go mod download` 与 `go build` 两层都加了 `--mount=type=cache`
+  （`/go/pkg/mod` + `/root/.cache/go-build`），缓存跨 build 持久化在构建机上。
+- 起因：1.4.0 那次构建实测约 2 分钟，其中 `modernc.org/sqlite`（纯 Go 移植的 SQLite）
+  单个包编译就要 1~2 分钟，而 BuildKit 在此期间**零输出**——看起来跟卡死一样，
+  排查时确实误判过一次「任务卡住」。
+- 缓存只影响编译速度，产物仍由 builder 阶段 `COPY` 出去，最终镜像里不含缓存目录。
+- 未引入 `# syntax=docker/dockerfile:1`：那会额外拉取 docker/dockerfile 前端镜像，
+  在受限网络里多一个失败点；Docker 内置前端已支持 cache mount。
+
 ## [1.4.0] — 2026-11-06
 
 **卡掉线时不再让短信石沉大海**：离线期间提交的短信自动排队，卡恢复后补发；

@@ -1,6 +1,18 @@
 # Dockerfile for uart_sms_forwarder-multi
 # 多设备版本 - 简化构建
 #
+# ⚡ 编译缓存（2026-11-06）
+#   两个 RUN 都挂了 BuildKit cache mount（/go/pkg/mod + /root/.cache/go-build），
+#   缓存跨 build 持久化在这个 daemon 上。
+#
+#   不加之前：每次 docker build 都要把全部依赖重编一遍。实测 1.4.0 那次用了
+#   约 2 分钟，其中 modernc.org/sqlite（纯 Go 移植的 SQLite）单个包就要 1~2 分钟，
+#   而期间 BuildKit 是静默的，看起来像卡死。
+#   加之后：改代码再构建，只有改动包及其下游重编，几十秒。
+#
+#   ⚠️ cache mount 只影响「编译速度」，不影响镜像内容——产物仍从 builder 阶段
+#   COPY 出去，最终镜像里没有缓存目录。
+#
 # ⚠️ 前端可以选择预构建
 #   WEB_PREBUILT=1（默认）：直接用仓库里的 web/embed_dir，容器内不装 node。
 #                           适用于调用方已经跑过 `npm run build` 并同步了产物。
@@ -28,7 +40,9 @@ ARG WEB_PREBUILT=1
 ENV GOPROXY=${GOPROXY}
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go mod download
 COPY . .
 
 # web/assets.go 用 go:embed 嵌的是 web/embed_dir（不是 web/dist！），
@@ -47,7 +61,9 @@ RUN set -e; \
         rm -rf /build/web/embed_dir && cp -a /build/web/dist /build/web/embed_dir; \
     fi
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o uart_sms_forwarder ./cmd/serv
 
 FROM alpine:latest
 # 换国内 apk 源 + 超时兜底：dl-cdn.alpinelinux.org 在本机被 DNS 解析到 fake-ip 段
