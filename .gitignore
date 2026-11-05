@@ -1,6 +1,8 @@
 # Build artifacts
 uart_sms_forwarder
 uart_sms_forwarder_v*
+# 交叉编译中间产物（release.sh / build-release.sh 会往里塞二进制）
+bin/
 
 # Dependencies
 node_modules/

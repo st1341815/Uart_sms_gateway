@@ -310,7 +310,7 @@ $EDITOR CHANGELOG.md
 GITHUB_TOKEN=ghp_xxx make release
 ```
 
-脚本按 9 个阶段执行，任一步失败即停下并给出可操作的提示：
+脚本按 10 个阶段执行，任一步失败即停下并给出可操作的提示：
 
 | 阶段 | 做什么 | 失败时 |
 |---|---|---|
@@ -321,14 +321,16 @@ GITHUB_TOKEN=ghp_xxx make release
 | 5 部署 | 记下当前镜像 tag → 打回滚点 `pre-$VERSION` → 备份 compose → 切镜像 → `compose up -d` | — |
 | 6 验证 | 轮询 `/health`（20 × 2s），再 `docker inspect` 核对运行镜像 | **自动回滚**到上一版并重启 |
 | 7 tag | `git tag -a v$VERSION` | 已存在且指向别的 commit 时拒绝覆盖 |
-| 8 推送 | push 分支 + tag，再用 GitHub API 建 Release | `422 already_exists` 视为已存在，跳过 |
-| 9 清理 | 删远端 `.build-$VERSION` 与本地 tar 包 | — |
+| 8 发布包 | 从刚构建的镜像 `docker cp` 出二进制 → 打成 tar.gz + `SHA256SUMS.txt` | 停（不留半成品包） |
+| 9 推送 | push 分支 + tag，建 Release 并逐个上传附件 | 附件失败只告警，正文照发；`422 already_exists` 视为跳过 |
+| 10 清理 | 删远端 `.build-$VERSION`、临时二进制与本地 tar 包 | — |
 
 常用参数：
 
 ```bash
 ./scripts/release.sh --dry-run              # 只演练，不构建不部署不推送
 ./scripts/release.sh --skip-publish         # 构建 + 部署，但不推 GitHub
+./scripts/release.sh --skip-binaries        # 发布，但不生成/上传二进制附件
 ./scripts/release.sh --skip-build           # 复用远端已有构建目录（调试用）
 ./scripts/release.sh --commit "说明"        # 工作区脏时代提交，保证 tag 与内容一致
 ./scripts/release.sh --version 1.4.2        # 不读文件里的版本号，显式指定
@@ -355,11 +357,18 @@ GITHUB_TOKEN=ghp_xxx make release
 
 仓库：<https://github.com/st1341815/Uart_sms_gateway>
 
-另外，二进制发布包仍单独出（脚本只管 Docker，不发二进制）：
+发布包由脚本自动生成并挂到 Release：`dist-release/` 下的
+`uart_sms_forwarder-<ver>-linux-amd64.tar.gz` 与 `SHA256SUMS.txt`。
+
+> **二进制不是重新交叉编译的，而是从刚构建好的镜像里 `docker cp` 出来的。**
+> 两个好处：发布包与线上跑的可执行文件**字节一致**（不会出现「镜像里是 A、包里是 B」）；
+> 构建机不必装 Go（s21 实测没有 `go`，Dockerfile.multi 本来就是在容器里编的）。
+> `internal/version` 的默认值就是发行版本号，所以裸 `go build` 出来的二进制自带正确版本。
+
+只想单独出包（不部署、不发版）：
 
 ```bash
-# → dist-release/（含 SHA256SUMS）
-VERSION=v1.4.2 ./scripts/build-release.sh
+BINARY=<已有二进制路径> ./scripts/build-release.sh 1.4.2
 ```
 
 > 曾经有一套「推 tag → 本地 Gitea Actions 自动出镜像 + 发布包 + Release」的流水线，
