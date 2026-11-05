@@ -162,14 +162,13 @@
   }
 
   html {
-    min-width: 320px;
-    /* 用变量而不是 #f3f6f9：否则深色下 html 露白边 */
+    /* 不要设 min-width：它会让窄屏（<320px 或用户放大字号后）无法收缩，
+       被迫横向溢出。自适应页面的底线是「小屏能缩」。 */
     background: var(--canvas);
   }
 
   body {
     @apply bg-canvas text-fg;
-    min-width: 320px;
     min-height: 100vh;
     margin: 0;
     font-family: "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei",

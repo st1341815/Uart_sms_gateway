@@ -428,7 +428,7 @@ export default function Layout() {
 
                 <main
                     className={cn(
-                        'app-content mx-auto w-full max-w-[1680px] overflow-x-clip px-3 py-4 sm:px-4 lg:px-6',
+                        'app-content mx-auto w-full max-w-[1680px] px-3 py-4 sm:px-4 lg:px-6',
                         location.pathname === '/' && 'lg:h-[calc(100vh-64px)] lg:overflow-hidden',
                     )}
                 >

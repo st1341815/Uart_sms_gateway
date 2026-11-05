@@ -72,54 +72,86 @@ function DeviceRow({
 }) {
     const percent = signalPercent(device.signal);
     const offline = !device.connected;
+    const dotTone = offline ? 'bg-fg-3' : percent >= 40 ? 'bg-ok' : 'bg-err';
+    const signalTone = offline ? 'text-fg-3' : percent >= 40 ? 'text-fg-2' : 'text-err';
+    const netLabel = device.flymode ? 'FLY' : device.isRoaming ? 'ROAM' : '4G';
+
     return (
-        <div
-            className={cn(
-                'grid h-[52px] grid-cols-[16px_minmax(0,1fr)_64px] items-center gap-2.5 border-b border-line-soft px-3 last:border-b-0 sm:grid-cols-[20px_minmax(64px,0.75fr)_minmax(0,1.6fr)_minmax(76px,1fr)_minmax(96px,1.1fr)_minmax(58px,0.7fr)_minmax(64px,0.8fr)] sm:gap-3 sm:px-3.5',
-                offline && 'opacity-70',
-            )}
-        >
-            <span
+        <>
+            {/*
+              手机（<640px）：卡片式两行，靠 flex 自然堆叠。
+              之前是「表格压成 3 列」，列宽再怎么调都是把桌面布局硬挤进窄屏，
+              中文一长就顶破。这里改成没有固定列的结构，窄到 280px 也不会溢出。
+            */}
+            <div
                 className={cn(
-                    'size-[7px] rounded-full',
-                    offline ? 'bg-fg-3' : percent >= 40 ? 'bg-ok' : 'bg-err',
+                    'flex flex-col gap-1.5 border-b border-line-soft px-3 py-2.5 last:border-b-0 sm:hidden',
+                    offline && 'opacity-70',
                 )}
-                title={offline ? '离线' : percent >= 40 ? '在线' : '信号弱'}
-            />
-
-            <span className="num hidden min-w-0 truncate whitespace-nowrap text-[11.5px] text-fg-2 sm:block" title={device.port || device.id}>
-                {device.port || device.id}
-            </span>
-
-            <div className="min-w-0">
-                <div className="flex items-baseline gap-1.5">
-                    <span className="cjk-nowrap truncate text-[13.5px] font-semibold text-fg">{device.name}</span>
-                    <span className="num hidden text-[10px] text-fg-3 sm:inline">
-                        {device.flymode ? 'FLY' : device.isRoaming ? 'ROAM' : '4G'}
+            >
+                <div className="flex items-center gap-2">
+                    <span className={cn('size-[7px] shrink-0 rounded-full', dotTone)}
+                          title={offline ? '离线' : percent >= 40 ? '在线' : '信号弱'}/>
+                    <span className="cjk-nowrap min-w-0 truncate text-[13.5px] font-semibold text-fg">{device.name}</span>
+                    <span className="num shrink-0 text-[10px] text-fg-3">{netLabel}</span>
+                    <span className="num ml-auto shrink-0 text-[11px] text-fg-3">{formatTime(lastActivity)}</span>
+                </div>
+                <div className="flex items-center gap-2 pl-[15px]">
+                    <span className="cjk-nowrap min-w-0 truncate text-[11.5px] text-fg-2">
+                        {offline ? '—' : device.operator || '未知运营商'}
+                    </span>
+                    <span className={cn('num shrink-0 text-[11.5px] tracking-tight', offline ? 'text-fg-3' : 'text-fg')}>
+                        {device.phoneNumber || '未补录'}
+                    </span>
+                    <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                        <SignalBars signal={device.signal} connected={device.connected}/>
+                        <span className={cn('num text-[11px]', signalTone)}>
+                            {offline ? '—' : device.signal ?? '—'}
+                        </span>
                     </span>
                 </div>
-                <div className="num mt-0.5 truncate text-[11px] text-fg-3 sm:hidden">
-                    {device.phoneNumber || '号码未补录'}
-                </div>
             </div>
 
-            <span className="hidden whitespace-nowrap text-xs text-fg-2 sm:block">
-                {offline ? '—' : device.operator || '未知运营商'}
-            </span>
+            {/* ≥640px：沿用七列表格行 */}
+            <div
+                className={cn(
+                    'hidden h-[52px] grid-cols-[20px_minmax(64px,0.75fr)_minmax(0,1.6fr)_minmax(76px,1fr)_minmax(96px,1.1fr)_minmax(58px,0.7fr)_minmax(64px,0.8fr)] items-center gap-3 border-b border-line-soft px-3.5 last:border-b-0 sm:grid',
+                    offline && 'opacity-70',
+                )}
+            >
+                <span className={cn('size-[7px] rounded-full', dotTone)}
+                      title={offline ? '离线' : percent >= 40 ? '在线' : '信号弱'}/>
 
-            <span className={cn('num hidden whitespace-nowrap text-[12.5px] tracking-tight sm:block', offline ? 'text-fg-3' : 'text-fg')}>
-                {device.phoneNumber || '未补录'}
-            </span>
-
-            <div className="hidden items-center gap-1.5 sm:flex">
-                <SignalBars signal={device.signal} connected={device.connected}/>
-                <span className={cn('num text-[11.5px]', offline ? 'text-fg-3' : percent >= 40 ? 'text-fg-2' : 'text-err')}>
-                    {offline ? '—' : device.signal ?? '—'}
+                <span className="num min-w-0 truncate whitespace-nowrap text-[11.5px] text-fg-2"
+                      title={device.port || device.id}>
+                    {device.port || device.id}
                 </span>
-            </div>
 
-            <span className="num text-right text-[11px] text-fg-3">{formatTime(lastActivity)}</span>
-        </div>
+                <div className="min-w-0">
+                    <div className="flex items-baseline gap-1.5">
+                        <span className="cjk-nowrap truncate text-[13.5px] font-semibold text-fg">{device.name}</span>
+                        <span className="num text-[10px] text-fg-3">{netLabel}</span>
+                    </div>
+                </div>
+
+                <span className="whitespace-nowrap text-xs text-fg-2">
+                    {offline ? '—' : device.operator || '未知运营商'}
+                </span>
+
+                <span className={cn('num whitespace-nowrap text-[12.5px] tracking-tight', offline ? 'text-fg-3' : 'text-fg')}>
+                    {device.phoneNumber || '未补录'}
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                    <SignalBars signal={device.signal} connected={device.connected}/>
+                    <span className={cn('num text-[11.5px]', signalTone)}>
+                        {offline ? '—' : device.signal ?? '—'}
+                    </span>
+                </div>
+
+                <span className="num whitespace-nowrap text-right text-[11px] text-fg-3">{formatTime(lastActivity)}</span>
+            </div>
+        </>
     );
 }
 
