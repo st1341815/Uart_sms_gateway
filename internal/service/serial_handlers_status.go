@@ -50,6 +50,9 @@ func (s *SerialService) handleStatusResponse(msg *ParsedMessage) {
 	}
 	s.deviceCache.Set(CacheKeyDeviceStatus, &statusData, CacheTTL)
 	s.logger.Debug("设备状态缓存已更新")
+
+	// 注册状态发生变化时推送 SIM 上下线通知（开关在「通知渠道」页控制）
+	s.checkSimStatusChange(&statusData)
 }
 
 func (s *SerialService) handleSystemReady(msg *ParsedMessage) {

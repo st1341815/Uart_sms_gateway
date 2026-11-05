@@ -59,6 +59,16 @@ type SerialService struct {
 
 	// 设备的飞行模式查询永远返回 false，无奈只能在应用层处理
 	flyMode atomic.Bool
+
+	// SIM 上下线监控
+	//
+	// simOnline 记录上一次观测到的在线状态：-1 = 未知（进程刚启动，尚未收到
+	// 第一个状态帧），0 = 离线，1 = 在线。首次状态帧只记录不通知——否则每次
+	// 重启服务都会误推一条"SIM 卡上线"。
+	simOnline atomic.Int32
+	// lastSimNotifyAt 最近一次推送的时间戳（Unix 秒），用于冷却去抖：
+	// 模块重连、信号抖动会让状态帧在短时间内反复翻转，没有冷却会刷屏。
+	lastSimNotifyAt atomic.Int64
 }
 
 // NewSerialService 创建串口服务实例（兼容旧模式）
@@ -101,6 +111,8 @@ func NewSerialServiceWithDeviceID(
 		deviceCache:     cache.New[string, *StatusData](CacheTTL),
 	}
 	service.initMessageHandlers()
+	// -1 = 未知：首个状态帧只用于建立基线，不推送通知
+	service.simOnline.Store(-1)
 	return service
 }
 
@@ -135,6 +147,9 @@ func (s *SerialService) Start() {
 		// 连接失败或断开，使用 backoff 重试
 		if err != nil {
 			s.setConnected(false)
+			// 状态帧只在设备在线时才会上报，整机掉线时上行静默，
+			// 这里补一刀，避免"卡掉了但没人知道"。
+			s.markSimOfflineOnDisconnect()
 			retryAfter := b.Duration()
 			s.logger.Warn("串口连接异常，将重试",
 				zap.Error(err),

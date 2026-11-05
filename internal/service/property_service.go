@@ -16,6 +16,9 @@ import (
 const (
 	// PropertyIDNotificationChannels 通知渠道配置的固定 ID
 	PropertyIDNotificationChannels = "notification_channels"
+
+	// PropertyIDSimStatusNotify SIM 卡上下线通知开关的固定 ID
+	PropertyIDSimStatusNotify = "sim_status_notify"
 )
 
 type PropertyService struct {
@@ -102,6 +105,19 @@ func (s *PropertyService) GetNotificationChannelConfigs(ctx context.Context) ([]
 	return allChannels, nil
 }
 
+// GetSimStatusNotifyEnabled 读取 SIM 上下线通知开关。
+//
+// 读不到配置时按「开启」处理：这个功能的默认预期是"掉线得让人知道"，
+// 配置缺失（老库升级、JSON 损坏）不该把告警静默掉。
+func (s *PropertyService) GetSimStatusNotifyEnabled(ctx context.Context) bool {
+	var cfg models.SimStatusNotifyConfig
+	if err := s.GetValue(ctx, PropertyIDSimStatusNotify, &cfg); err != nil {
+		s.logger.Debug("读取 SIM 上下线通知开关失败，按默认开启处理", zap.Error(err))
+		return true
+	}
+	return cfg.Enabled
+}
+
 // defaultPropertyConfig 默认配置项定义
 type defaultPropertyConfig struct {
 	ID    string
@@ -117,6 +133,11 @@ func (s *PropertyService) InitializeDefaultConfigs(ctx context.Context) error {
 			ID:    PropertyIDNotificationChannels,
 			Name:  "通知渠道配置",
 			Value: []models.NotificationChannelConfig{},
+		},
+		{
+			ID:    PropertyIDSimStatusNotify,
+			Name:  "SIM 上下线通知",
+			Value: models.SimStatusNotifyConfig{Enabled: true},
 		},
 	}
 

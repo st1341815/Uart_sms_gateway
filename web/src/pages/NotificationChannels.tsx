@@ -9,6 +9,7 @@ import {
     Mail,
     MessageSquare,
     Save,
+    Signal,
     TestTube,
     type LucideIcon,
 } from 'lucide-react';
@@ -22,8 +23,10 @@ import {Switch} from '@/components/ui/switch';
 import {Textarea} from '@/components/ui/textarea';
 import {
     getNotificationChannels,
+    getProperty,
     type NotificationChannel,
     saveNotificationChannels,
+    saveProperty,
     testNotificationChannel,
 } from '@/api/property.ts';
 import {PageHeader} from '@/components/PageHeader';
@@ -278,6 +281,26 @@ export default function NotificationChannels() {
         },
     });
 
+    // SIM 上下线通知开关：与渠道配置分开读写、切即生效。
+    // 不跟「保存配置」按钮绑在一起——用户切开关往往是想立刻停掉告警，
+    // 还要再点一次保存才生效会误以为没关掉。
+    const {data: simNotify, isLoading: simNotifyLoading} = useQuery({
+        queryKey: ['simStatusNotify'],
+        queryFn: () => getProperty<{ enabled: boolean }>('sim_status_notify'),
+    });
+
+    const simNotifyMutation = useMutation({
+        mutationFn: (enabled: boolean) => saveProperty('sim_status_notify', 'SIM 上下线通知', {enabled}),
+        onSuccess: async (_result, enabled) => {
+            toast.success(enabled ? '已开启 SIM 上下线通知' : '已关闭 SIM 上下线通知');
+            await queryClient.invalidateQueries({queryKey: ['simStatusNotify']});
+        },
+        onError: (error: unknown) => {
+            console.error('保存 SIM 通知开关失败:', error);
+            toast.error('保存开关失败');
+        },
+    });
+
     const handleSave = () => {
         let webhookHeaders: Record<string, unknown> | undefined;
         if (formValues.webhookHeaders.trim()) {
@@ -526,6 +549,30 @@ export default function NotificationChannels() {
                     {saveMutation.isPending ? '保存中...' : draft ? '保存配置' : '已保存'}
                 </Button>}
             />
+
+            <Card className="gap-0 py-0">
+                <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand">
+                            <Signal className="size-4"/>
+                        </span>
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-fg-2">SIM 上下线通知</p>
+                            <p className="mt-0.5 text-[11px] leading-5 text-fg-3">
+                                SIM 卡注册上线或掉线时，通过已启用的渠道推送一条通知。设备串口断开时也会补发掉线，
+                                避免"卡停了但没人知道"。切换即时生效，不需要点保存。
+                            </p>
+                        </div>
+                    </div>
+                    <Switch
+                        checked={simNotify?.enabled ?? true}
+                        disabled={simNotifyLoading || simNotifyMutation.isPending}
+                        onCheckedChange={(checked) => simNotifyMutation.mutate(checked)}
+                        className="data-[state=checked]:bg-brand"
+                        aria-label="SIM 上下线通知"
+                    />
+                </CardContent>
+            </Card>
 
             <div className="grid items-start gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
                 <Card className="gap-0 py-0">

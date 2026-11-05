@@ -13,6 +13,15 @@ func (Property) TableName() string {
 	return "properties"
 }
 
+// SimStatusNotifyConfig SIM 卡上下线通知开关（存储在 Property 中）
+//
+// 开关状态单独存一个 property，不挂在 notification_channels 里：
+// 渠道是「往哪发」，开关是「发不发」，两者生命周期不同 ——
+// 用户可能临时关掉推送但保留渠道配置，混在一起会互相牵连。
+type SimStatusNotifyConfig struct {
+	Enabled bool `json:"enabled"` // 是否推送 SIM 上线/掉线通知
+}
+
 // NotificationChannelConfig 通知渠道配置（存储在 Property 中）
 type NotificationChannelConfig struct {
 	Type    string                 `json:"type"`    // 类型: dingtalk, wecom, feishu, webhook

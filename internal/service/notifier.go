@@ -59,6 +59,22 @@ func (m NotificationMessage) String() string {
 			deviceInfo,
 			timestamp.Format(time.DateTime),
 		)
+	case "sim_online", "sim_offline":
+		title := "SIM 卡上线"
+		if m.Type == "sim_offline" {
+			title = "SIM 卡掉线"
+		}
+		return fmt.Sprintf(`%s
+----
+%s
+接收设备: %s
+时间: %s
+`,
+			title,
+			m.Content,
+			deviceInfo,
+			timestamp.Format(time.DateTime),
+		)
 	default: // "sms"
 		return fmt.Sprintf(`%s
 ----
