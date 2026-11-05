@@ -30,9 +30,9 @@ interface InfoRowProps {
 
 function InfoRow({label, value, mono = false}: InfoRowProps) {
     return (
-        <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-100 py-2.5 last:border-b-0">
-            <dt className="shrink-0 text-xs font-medium text-slate-500">{label}</dt>
-            <dd className={cn('min-w-0 truncate text-right text-xs font-semibold text-slate-800', mono && 'font-mono')}>
+        <div className="flex min-w-0 items-center justify-between gap-4 border-b border-line-soft py-2.5 last:border-b-0">
+            <dt className="shrink-0 text-xs font-medium text-fg-3">{label}</dt>
+            <dd className={cn('min-w-0 truncate text-right text-xs font-semibold text-fg-2', mono && 'font-mono')}>
                 {value}
             </dd>
         </div>
@@ -47,14 +47,14 @@ interface StatusTileProps {
 
 function StatusTile({label, value, tone = 'slate'}: StatusTileProps) {
     const toneClass = {
-        blue: 'border-blue-100 bg-blue-50 text-blue-700',
-        green: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-        amber: 'border-amber-200 bg-amber-50 text-amber-700',
-        slate: 'border-slate-200 bg-slate-50 text-slate-600',
+        blue: 'border-brand/25 bg-brand-soft text-brand',
+        green: 'border-ok/25 bg-ok/10 text-ok',
+        amber: 'border-warn/30 bg-warn/10 text-warn',
+        slate: 'border-line bg-surface-2 text-fg-2',
     }[tone];
 
     return (
-        <div className={cn('rounded-xl border px-3.5 py-3', toneClass)}>
+        <div className={cn('rounded-md border px-3.5 py-3', toneClass)}>
             <p className="text-[10px] font-semibold tracking-wide opacity-70">{label}</p>
             <p className="mt-1 truncate text-sm font-bold">{value}</p>
         </div>
@@ -229,8 +229,8 @@ export default function SerialControl() {
 
     if (devicesLoading) {
         return (
-            <div className="flex min-h-[50vh] items-center justify-center gap-2 text-sm text-slate-500">
-                <Loader2 className="size-4 animate-spin text-blue-600"/>
+            <div className="flex min-h-[50vh] items-center justify-center gap-2 text-sm text-fg-3">
+                <Loader2 className="size-4 animate-spin text-brand"/>
                 正在读取设备列表
             </div>
         );
@@ -241,23 +241,23 @@ export default function SerialControl() {
             <PageHeader
                 title="串口控制"
                 description="选择一张 SIM 卡，查看移动网络参数、发送短信或执行设备控制。"
-                action={<span className="text-xs text-slate-400">
+                action={<span className="text-xs text-fg-3">
                     {devicesFetching ? '正在同步' : `${devices.filter((d) => d.connected).length}/${devices.length} 台在线`}
                 </span>}
             />
 
             {/* 设备切换 */}
             <Card className="mt-6 gap-0 py-0">
-                <CardHeader className="border-b border-slate-100 py-4">
+                <CardHeader className="border-b border-line-soft py-4">
                     <CardTitle className="flex items-center gap-2 text-sm">
-                        <RadioTower className="size-4 text-blue-600"/>
+                        <RadioTower className="size-4 text-brand"/>
                         设备选择
-                        <span className="text-[11px] font-normal text-slate-400">共 {devices.length} 台</span>
+                        <span className="text-[11px] font-normal text-fg-3">共 {devices.length} 台</span>
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="p-3">
                     {devices.length === 0 ? (
-                        <p className="px-2 py-6 text-center text-xs leading-6 text-slate-400">
+                        <p className="px-2 py-6 text-center text-xs leading-6 text-fg-3">
                             未发现已配置的串口设备，请在服务端 config.yaml 的 devices 中配置后重启服务。
                         </p>
                     ) : (
@@ -269,31 +269,31 @@ export default function SerialControl() {
                                     <div
                                         key={device.id}
                                         className={cn(
-                                            'group relative flex min-w-0 items-center gap-3 rounded-xl border p-3 transition-colors',
+                                            'group relative flex min-w-0 items-center gap-3 rounded-md border p-3 transition-colors',
                                             active
-                                                ? 'border-blue-200 bg-blue-50/70'
-                                                : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50',
+                                                ? 'border-brand/30 bg-brand-soft/70'
+                                                : 'border-line hover:border-brand/30 hover:bg-surface-2',
                                         )}
                                     >
                                         <button
                                             type="button"
                                             onClick={() => setSelectedDeviceId(device.id)}
                                             aria-pressed={active}
-                                            className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-blue-300"
+                                            className="flex min-w-0 flex-1 items-center gap-3 text-left outline-none focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-brand/30"
                                         >
                                             <span className={cn(
-                                                'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                                                active ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500',
-                                                !device.connected && 'text-slate-400',
+                                                'flex size-9 shrink-0 items-center justify-center rounded-md',
+                                                active ? 'bg-surface text-brand' : 'bg-surface-2 text-fg-3',
+                                                !device.connected && 'text-fg-3',
                                             )}>
                                                 <Smartphone className="size-4"/>
                                             </span>
                                             <span className="min-w-0 flex-1">
                                                 <span className="flex items-center gap-1.5">
-                                                    <span className="truncate text-sm font-semibold text-slate-900">{device.name}</span>
-                                                    <span className={cn('size-1.5 shrink-0 rounded-full', device.connected ? 'bg-emerald-500' : 'bg-slate-300')}/>
+                                                    <span className="truncate text-sm font-semibold text-fg">{device.name}</span>
+                                                    <span className={cn('size-1.5 shrink-0 rounded-full', device.connected ? 'bg-ok' : 'bg-fg-3')}/>
                                                 </span>
-                                                <span className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-400">
+                                                <span className="mt-0.5 flex items-center gap-2 text-[10px] text-fg-3">
                                                     <span className="truncate font-mono">{device.port || device.id}</span>
                                                     <span className="shrink-0">{device.connected ? `${percent}%` : '离线'}</span>
                                                 </span>
@@ -309,8 +309,8 @@ export default function SerialControl() {
                                                 openRenameDialog(device);
                                             }}
                                             className={cn(
-                                                'flex size-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition',
-                                                'hover:bg-white hover:text-blue-600',
+                                                'flex size-7 shrink-0 items-center justify-center rounded-md text-fg-3 transition',
+                                                'hover:bg-surface hover:text-brand',
                                                 'sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
                                             )}
                                         >
@@ -328,27 +328,27 @@ export default function SerialControl() {
                 <div className="grid gap-4">
                     {/* 网络与设备状态 */}
                     <Card className="gap-0 overflow-hidden py-0">
-                        <CardHeader className="border-b border-slate-100 py-5">
+                        <CardHeader className="border-b border-line-soft py-5">
                             <div className="flex items-center justify-between gap-4">
                                 <div>
                                     <CardTitle className="flex items-center gap-2 text-base">
-                                        <Signal className="size-4 text-blue-600"/>
+                                        <Signal className="size-4 text-brand"/>
                                         网络与设备状态
                                         {selectedDevice && (
-                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-semibold text-fg-3">
                                                 {selectedDevice.name}
                                             </span>
                                         )}
                                     </CardTitle>
-                                    <p className="mt-1.5 text-xs text-slate-500">蜂窝网络、信号参数与串口模块信息</p>
+                                    <p className="mt-1.5 text-xs text-fg-3">蜂窝网络、信号参数与串口模块信息</p>
                                 </div>
                                 <span className={cn(
                                     'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
                                     connected
-                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                        : 'border-rose-200 bg-rose-50 text-rose-700',
+                                        ? 'border-ok/30 bg-ok/10 text-ok'
+                                        : 'border-err/30 bg-err/10 text-err',
                                 )}>
-                                    <span className={cn('size-1.5 rounded-full', connected ? 'bg-emerald-500' : 'bg-rose-500')}/>
+                                    <span className={cn('size-1.5 rounded-full', connected ? 'bg-ok' : 'bg-err')}/>
                                     {connected ? '设备在线' : '设备离线'}
                                 </span>
                             </div>
@@ -356,7 +356,7 @@ export default function SerialControl() {
 
                         <CardContent className="py-5">
                             {!selectedDevice ? (
-                                <div className="flex min-h-60 flex-col items-center justify-center gap-2 text-center text-slate-400">
+                                <div className="flex min-h-60 flex-col items-center justify-center gap-2 text-center text-fg-3">
                                     <Smartphone className="size-10 opacity-25"/>
                                     <p className="text-sm font-medium">请选择一台设备</p>
                                     <p className="text-xs">选择后可查看该 SIM 卡的实时网络状态</p>
@@ -373,8 +373,8 @@ export default function SerialControl() {
                                             境外/漫游卡不写 SIM 卡 MSISDN 字段，AT+CNUM 必然读不到，
                                             只写「读取不到」会让用户以为是坏了，所以直接给补录入口。 */}
                                         <div className={cn(
-                                            'group/phone relative rounded-xl border px-3.5 py-3',
-                                            connected ? 'border-blue-100 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-600',
+                                            'group/phone relative rounded-md border px-3.5 py-3',
+                                            connected ? 'border-brand/25 bg-brand-soft text-brand' : 'border-line bg-surface-2 text-fg-2',
                                         )}>
                                             <p className="text-[10px] font-semibold tracking-wide opacity-70">本机号码</p>
                                             <p className="mt-1 truncate text-sm font-bold">
@@ -385,7 +385,7 @@ export default function SerialControl() {
                                                 title="手工补录本机号码"
                                                 aria-label="手工补录本机号码"
                                                 onClick={() => openPhoneDialog(selectedDevice)}
-                                                className="absolute right-1.5 top-1.5 rounded p-1 text-current opacity-0 transition hover:bg-white/60 focus-visible:opacity-100 group-hover/phone:opacity-60 group-hover/phone:hover:opacity-100"
+                                                className="absolute right-1.5 top-1.5 rounded p-1 text-current opacity-0 transition hover:bg-surface/60 focus-visible:opacity-100 group-hover/phone:opacity-60 group-hover/phone:hover:opacity-100"
                                             >
                                                 <Pencil className="size-3"/>
                                             </button>
@@ -404,12 +404,12 @@ export default function SerialControl() {
 
                                     <section className="mt-5">
                                         <div className="mb-2.5 flex items-center justify-between">
-                                            <h3 className="text-xs font-bold text-slate-800">信号质量</h3>
-                                            <span className="text-[10px] font-medium text-slate-400">
+                                            <h3 className="text-xs font-bold text-fg-2">信号质量</h3>
+                                            <span className="text-[10px] font-medium text-fg-3">
                                                 {connected ? `CSQ ${selectedDevice.signal ?? '—'} / 31` : '等待设备连接'}
                                             </span>
                                         </div>
-                                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                                        <div className="h-2 overflow-hidden rounded-full bg-surface-2">
                                             <div
                                                 className={cn(
                                                     'h-full rounded-full transition-all',
@@ -420,8 +420,8 @@ export default function SerialControl() {
                                         </div>
                                     </section>
 
-                                    <section className="mt-5 border-t border-slate-100 pt-4">
-                                        <h3 className="mb-1 text-xs font-bold text-slate-800">模块信息</h3>
+                                    <section className="mt-5 border-t border-line-soft pt-4">
+                                        <h3 className="mb-1 text-xs font-bold text-fg-2">模块信息</h3>
                                         <dl className="grid gap-x-8 sm:grid-cols-2">
                                             <InfoRow label="设备标识" value={selectedDevice.id} mono/>
                                             <InfoRow label="串口设备" value={selectedDevice.port || unavailable} mono/>
@@ -430,8 +430,8 @@ export default function SerialControl() {
                                                 label="漫游状态"
                                                 value={connected
                                                     ? selectedDevice.isRoaming
-                                                        ? <span className="text-amber-600">漫游中</span>
-                                                        : <span className="text-emerald-600">本地</span>
+                                                        ? <span className="text-warn">漫游中</span>
+                                                        : <span className="text-ok">本地</span>
                                                     : unavailable}
                                             />
                                         </dl>
@@ -441,9 +441,9 @@ export default function SerialControl() {
                                                 ['ICCID', connected ? selectedDevice.iccid || unavailable : unavailable],
                                                 ['IMSI', connected ? selectedDevice.imsi || unavailable : unavailable],
                                             ].map(([label, value]) => (
-                                                <div key={label} className="min-w-0 rounded-lg bg-slate-50 px-3.5 py-3">
-                                                    <p className="text-[10px] font-semibold text-slate-400">{label}</p>
-                                                    <p className="mt-1 truncate font-mono text-xs font-semibold text-slate-700" title={String(value)}>{value}</p>
+                                                <div key={label} className="min-w-0 rounded-md bg-surface-2 px-3.5 py-3">
+                                                    <p className="text-[10px] font-semibold text-fg-3">{label}</p>
+                                                    <p className="mt-1 truncate font-mono text-xs font-semibold text-fg-2" title={String(value)}>{value}</p>
                                                 </div>
                                             ))}
                                         </div>
@@ -455,52 +455,52 @@ export default function SerialControl() {
 
                     {/* 发送短信 */}
                     <Card className="gap-0 py-0">
-                        <CardHeader className="border-b border-slate-100 py-5">
+                        <CardHeader className="border-b border-line-soft py-5">
                             <CardTitle className="flex items-center gap-2 text-base">
-                                <Send className="size-4 text-blue-600"/>
+                                <Send className="size-4 text-brand"/>
                                 发送短信
                                 {selectedDevice && (
-                                    <span className="text-[11px] font-normal text-slate-400">通过 {selectedDevice.name}</span>
+                                    <span className="text-[11px] font-normal text-fg-3">通过 {selectedDevice.name}</span>
                                 )}
                             </CardTitle>
-                            <p className="mt-1.5 text-xs text-slate-500">选择设备后填写内容，直接从该 SIM 卡下发</p>
+                            <p className="mt-1.5 text-xs text-fg-3">选择设备后填写内容，直接从该 SIM 卡下发</p>
                         </CardHeader>
                         <CardContent className="py-5">
                             <form onSubmit={handleSend} className="grid gap-4">
                                 <div className="grid gap-4 sm:grid-cols-[220px_minmax(0,1fr)]">
                                     <div className="space-y-1.5">
-                                        <label htmlFor="serial-to" className="block text-xs font-semibold text-slate-700">目标号码</label>
+                                        <label htmlFor="serial-to" className="block text-xs font-semibold text-fg-2">目标号码</label>
                                         <Input
                                             id="serial-to"
                                             type="tel"
                                             value={to}
                                             onChange={(event) => setTo(event.target.value)}
                                             placeholder="10086"
-                                            className="bg-slate-50 font-mono focus:bg-white"
+                                            className="bg-surface-2 font-mono focus:bg-surface"
                                         />
                                     </div>
                                     <div className="space-y-1.5">
                                         <div className="flex items-center justify-between">
-                                            <label htmlFor="serial-content" className="block text-xs font-semibold text-slate-700">短信内容</label>
-                                            <span className="text-[10px] text-slate-400">{content.length} 字</span>
+                                            <label htmlFor="serial-content" className="block text-xs font-semibold text-fg-2">短信内容</label>
+                                            <span className="text-[10px] text-fg-3">{content.length} 字</span>
                                         </div>
                                         <Textarea
                                             id="serial-content"
                                             value={content}
                                             onChange={(event) => setContent(event.target.value)}
                                             placeholder="请输入短信内容"
-                                            className="min-h-20 resize-none bg-slate-50 focus:bg-white"
+                                            className="min-h-20 resize-none bg-surface-2 focus:bg-surface"
                                         />
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <p className="text-xs leading-5 text-slate-400">
+                                    <p className="text-xs leading-5 text-fg-3">
                                         部分设备对短信长度有限制，建议单条不超过 70 字。
                                     </p>
                                     <Button
                                         type="submit"
                                         disabled={!connected || sendMutation.isPending}
-                                        className="h-10 bg-blue-600 px-5 text-white hover:bg-blue-700"
+                                        className="h-10 bg-brand px-5 text-brand-fg hover:bg-brand"
                                     >
                                         {sendMutation.isPending
                                             ? <Loader2 className="size-4 animate-spin"/>
@@ -515,19 +515,19 @@ export default function SerialControl() {
 
                 {/* 设备控制 */}
                 <Card className="gap-0 py-0 xl:sticky xl:top-[84px]">
-                    <CardHeader className="border-b border-slate-100 py-5">
+                    <CardHeader className="border-b border-line-soft py-5">
                         <CardTitle className="flex items-center gap-2 text-base">
-                            <Activity className="size-4 text-blue-600"/>
+                            <Activity className="size-4 text-brand"/>
                             设备控制
                         </CardTitle>
-                        <p className="mt-1.5 text-xs text-slate-500">切换蜂窝网络状态或重启模块</p>
+                        <p className="mt-1.5 text-xs text-fg-3">切换蜂窝网络状态或重启模块</p>
                     </CardHeader>
                     <CardContent className="py-5">
-                        <dl className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3.5">
+                        <dl className="mb-4 rounded-md border border-line bg-surface-2 px-3.5">
                             <InfoRow label="当前设备" value={selectedDevice?.name ?? unavailable}/>
                             <InfoRow
                                 label="串口连接"
-                                value={<span className={connected ? 'text-emerald-600' : 'text-rose-600'}>{connected ? '已连接' : '未连接'}</span>}
+                                value={<span className={connected ? 'text-ok' : 'text-err'}>{connected ? '已连接' : '未连接'}</span>}
                             />
                             <InfoRow
                                 label="飞行模式"
@@ -538,7 +538,7 @@ export default function SerialControl() {
                             <Button
                                 onClick={() => setFlymodeMutation.mutate(!selectedDevice?.flymode)}
                                 disabled={!connected || setFlymodeMutation.isPending}
-                                className="h-10 bg-blue-600 text-white hover:bg-blue-700"
+                                className="h-10 bg-brand text-brand-fg hover:bg-brand"
                             >
                                 {setFlymodeMutation.isPending ? <Loader2 className="size-4 animate-spin"/> : <Signal className="size-4"/>}
                                 {selectedDevice?.flymode ? '关闭飞行模式' : '开启飞行模式'}
@@ -547,25 +547,25 @@ export default function SerialControl() {
                                 onClick={() => rebootMutation.mutate()}
                                 disabled={!connected || rebootMutation.isPending}
                                 variant="outline"
-                                className="h-10 border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                className="h-10 border-err/30 text-err hover:bg-err/10 hover:text-err"
                             >
                                 {rebootMutation.isPending ? <Loader2 className="size-4 animate-spin"/> : <RotateCcw className="size-4"/>}
                                 重启模块
                             </Button>
                         </div>
                         {!connected && (
-                            <p className="mt-3 text-xs leading-5 text-slate-400">
+                            <p className="mt-3 text-xs leading-5 text-fg-3">
                                 {selectedDevice ? '设备连接后才能执行控制操作。' : '请先在左侧选择设备。'}
                             </p>
                         )}
 
-                        <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-3 text-xs leading-5 text-amber-900">
+                        <div className="mt-5 rounded-md border border-warn/30 bg-warn/10 px-3.5 py-3 text-xs leading-5 text-warn">
                             开启飞行模式期间该设备无法收发短信，通知也会中断。
                         </div>
 
-                        <div className="mt-4 border-t border-slate-100 pt-4">
-                            <p className="mb-3 text-xs leading-5 text-slate-500">查看历史消息、会话与设备来源已统一在短信中心。</p>
-                            <Button variant="outline" className="h-10 w-full border-blue-200 text-blue-700 hover:bg-blue-50" asChild>
+                        <div className="mt-4 border-t border-line-soft pt-4">
+                            <p className="mb-3 text-xs leading-5 text-fg-3">查看历史消息、会话与设备来源已统一在短信中心。</p>
+                            <Button variant="outline" className="h-10 w-full border-brand/30 text-brand hover:bg-brand-soft" asChild>
                                 <Link to="/messages">
                                     <MessageSquareText className="size-4"/>
                                     前往短信中心
@@ -589,13 +589,13 @@ export default function SerialControl() {
                             <DialogTitle>修改卡名称</DialogTitle>
                             <DialogDescription>
                                 改的是这张卡的显示名，只影响界面；不影响设备 ID
-                                <span className="font-mono text-slate-500"> {renameTarget?.id}</span>
+                                <span className="font-mono text-fg-3"> {renameTarget?.id}</span>
                                 与串口绑定。
                             </DialogDescription>
                         </DialogHeader>
 
                         <div className="space-y-1.5 py-5">
-                            <label htmlFor="rename-device-name" className="block text-sm font-medium text-slate-800">
+                            <label htmlFor="rename-device-name" className="block text-sm font-medium text-fg-2">
                                 名称
                             </label>
                             <Input
@@ -605,9 +605,9 @@ export default function SerialControl() {
                                 placeholder="例如：联通3113"
                                 maxLength={32}
                                 autoFocus
-                                className="bg-slate-50 focus:bg-white"
+                                className="bg-surface-2 focus:bg-surface"
                             />
-                            <p className="text-[11px] text-slate-400">
+                            <p className="text-[11px] text-fg-3">
                                 最多 32 个字符，{renameValue.trim().length}/32
                             </p>
                         </div>
@@ -623,7 +623,7 @@ export default function SerialControl() {
                             </Button>
                             <Button
                                 type="submit"
-                                className="bg-blue-600 text-white hover:bg-blue-700"
+                                className="bg-brand text-brand-fg hover:bg-brand"
                                 disabled={renameMutation.isPending || !renameValue.trim()}
                             >
                                 {renameMutation.isPending && <Loader2 className="size-4 animate-spin"/>}
@@ -652,9 +652,9 @@ export default function SerialControl() {
                         </DialogHeader>
 
                         <div className="space-y-1.5 py-5">
-                            <label htmlFor="device-phone-number" className="block text-sm font-medium text-slate-800">
+                            <label htmlFor="device-phone-number" className="block text-sm font-medium text-fg-2">
                                 号码
-                                <span className="ml-2 font-mono text-[11px] text-slate-400">{phoneTarget?.id}</span>
+                                <span className="ml-2 font-mono text-[11px] text-fg-3">{phoneTarget?.id}</span>
                             </label>
                             <Input
                                 id="device-phone-number"
@@ -663,9 +663,9 @@ export default function SerialControl() {
                                 placeholder="例如：+8613800138000"
                                 maxLength={32}
                                 autoFocus
-                                className="bg-slate-50 focus:bg-white"
+                                className="bg-surface-2 focus:bg-surface"
                             />
-                            <p className="text-[11px] text-slate-400">
+                            <p className="text-[11px] text-fg-3">
                                 可含数字、+、-、空格，最多 32 个字符。留空保存＝清除补录，回退到 SIM 卡读取值。
                             </p>
                         </div>
@@ -681,7 +681,7 @@ export default function SerialControl() {
                             </Button>
                             <Button
                                 type="submit"
-                                className="bg-blue-600 text-white hover:bg-blue-700"
+                                className="bg-brand text-brand-fg hover:bg-brand"
                                 disabled={phoneMutation.isPending}
                             >
                                 {phoneMutation.isPending && <Loader2 className="size-4 animate-spin"/>}
@@ -696,8 +696,8 @@ export default function SerialControl() {
 }
 
 function percentToTone(percent: number) {
-    if (percent <= 0) return 'bg-slate-200';
-    if (percent >= 65) return 'bg-emerald-500';
-    if (percent >= 40) return 'bg-amber-500';
-    return 'bg-rose-500';
+    if (percent <= 0) return 'bg-surface-3';
+    if (percent >= 65) return 'bg-ok';
+    if (percent >= 40) return 'bg-warn';
+    return 'bg-err';
 }

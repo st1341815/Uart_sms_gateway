@@ -223,11 +223,11 @@ interface FieldProps {
 function Field({label, required = false, hint, children}: FieldProps) {
     return (
         <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700">
-                {label}{required && <span className="ml-1 text-rose-500">*</span>}
+            <label className="block text-xs font-semibold text-fg-2">
+                {label}{required && <span className="ml-1 text-err">*</span>}
             </label>
             {children}
-            {hint && <p className="text-xs leading-5 text-slate-400">{hint}</p>}
+            {hint && <p className="text-xs leading-5 text-fg-3">{hint}</p>}
         </div>
     );
 }
@@ -370,7 +370,7 @@ export default function NotificationChannels() {
         saveMutation.mutate(nextChannels);
     };
 
-    const inputClass = 'bg-slate-50 border-slate-200 focus-visible:border-blue-500 font-mono text-sm';
+    const inputClass = 'bg-surface-2 border-line focus-visible:border-brand font-mono text-sm';
     const testingSelected = testMutation.isPending && testMutation.variables === selectedType;
 
     const renderConfig = () => {
@@ -412,7 +412,7 @@ export default function NotificationChannels() {
                         <div className="grid gap-4 sm:grid-cols-2">
                             <Field label="请求方法">
                                 <Select value={formValues.webhookMethod} onValueChange={(value) => updateField('webhookMethod', value)}>
-                                    <SelectTrigger className="w-full bg-slate-50"><SelectValue/></SelectTrigger>
+                                    <SelectTrigger className="w-full bg-surface-2"><SelectValue/></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="POST">POST</SelectItem>
                                         <SelectItem value="PUT">PUT</SelectItem>
@@ -424,10 +424,10 @@ export default function NotificationChannels() {
                             </Field>
                         </div>
                         <Field label="请求头（JSON）" hint="可选，必须是一个合法的 JSON 对象。">
-                            <Textarea value={formValues.webhookHeaders} onChange={(event) => updateField('webhookHeaders', event.target.value)} placeholder={'{\n  "Authorization": "Bearer token"\n}'} className="min-h-28 resize-y bg-slate-50 font-mono text-xs"/>
+                            <Textarea value={formValues.webhookHeaders} onChange={(event) => updateField('webhookHeaders', event.target.value)} placeholder={'{\n  "Authorization": "Bearer token"\n}'} className="min-h-28 resize-y bg-surface-2 font-mono text-xs"/>
                         </Field>
                         <Field label="请求体模板" required hint="可使用 {{from}}、{{content}} 和 {{timestamp}} 占位符。">
-                            <Textarea value={formValues.webhookBody} onChange={(event) => updateField('webhookBody', event.target.value)} className="min-h-36 resize-y bg-slate-50 font-mono text-xs"/>
+                            <Textarea value={formValues.webhookBody} onChange={(event) => updateField('webhookBody', event.target.value)} className="min-h-36 resize-y bg-surface-2 font-mono text-xs"/>
                         </Field>
                     </div>
                 );
@@ -459,7 +459,7 @@ export default function NotificationChannels() {
                             </Field>
                         </div>
                         <Field label="邮件主题">
-                            <ChannelInput value={formValues.emailSubject} onChange={(event) => updateField('emailSubject', event.target.value)} className="bg-slate-50 border-slate-200 focus-visible:border-blue-500"/>
+                            <ChannelInput value={formValues.emailSubject} onChange={(event) => updateField('emailSubject', event.target.value)} className="bg-surface-2 border-line focus-visible:border-brand"/>
                         </Field>
                     </div>
                 );
@@ -472,16 +472,16 @@ export default function NotificationChannels() {
                         <Field label="接收用户或 Chat ID" required>
                             <ChannelInput value={formValues.telegramUserid} onChange={(event) => updateField('telegramUserid', event.target.value)} placeholder="用户 ID 或群组 Chat ID" className={inputClass}/>
                         </Field>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="rounded-md border border-line bg-surface-2 p-4">
                             <div className="flex items-center justify-between gap-4">
                                 <div>
-                                    <p className="text-sm font-semibold text-slate-800">使用 HTTP 代理</p>
-                                    <p className="mt-1 text-xs text-slate-500">网络无法直接访问 Telegram 时启用。</p>
+                                    <p className="text-sm font-semibold text-fg-2">使用 HTTP 代理</p>
+                                    <p className="mt-1 text-xs text-fg-3">网络无法直接访问 Telegram 时启用。</p>
                                 </div>
-                                <Switch checked={formValues.telegramProxyEnabled} onCheckedChange={(checked) => updateField('telegramProxyEnabled', checked)} className="data-[state=checked]:bg-blue-600"/>
+                                <Switch checked={formValues.telegramProxyEnabled} onCheckedChange={(checked) => updateField('telegramProxyEnabled', checked)} className="data-[state=checked]:bg-brand"/>
                             </div>
                             {formValues.telegramProxyEnabled && (
-                                <div className="mt-4 grid gap-4 border-t border-slate-200 pt-4">
+                                <div className="mt-4 grid gap-4 border-t border-line pt-4">
                                     <Field label="代理地址" required>
                                         <ChannelInput value={formValues.telegramProxyUrl} onChange={(event) => updateField('telegramProxyUrl', event.target.value)} placeholder="http://127.0.0.1:7890" className={inputClass}/>
                                     </Field>
@@ -503,8 +503,8 @@ export default function NotificationChannels() {
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center py-20 text-sm text-slate-500">
-                <Loader2 className="mr-2 size-5 animate-spin text-blue-600"/>
+            <div className="flex items-center justify-center py-20 text-sm text-fg-3">
+                <Loader2 className="mr-2 size-5 animate-spin text-brand"/>
                 正在读取通知渠道
             </div>
         );
@@ -520,7 +520,7 @@ export default function NotificationChannels() {
                 action={<Button
                     onClick={handleSave}
                     disabled={!draft || saveMutation.isPending}
-                    className="bg-blue-600 text-white hover:bg-blue-700"
+                    className="bg-brand text-brand-fg hover:bg-brand"
                 >
                     {saveMutation.isPending ? <Loader2 className="size-4 animate-spin"/> : <Save className="size-4"/>}
                     {saveMutation.isPending ? '保存中...' : draft ? '保存配置' : '已保存'}
@@ -529,9 +529,9 @@ export default function NotificationChannels() {
 
             <div className="grid items-start gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
                 <Card className="gap-0 py-0">
-                    <CardHeader className="border-b border-slate-100 py-4">
+                    <CardHeader className="border-b border-line-soft py-4">
                         <CardTitle className="text-sm">渠道列表</CardTitle>
-                        <p className="mt-1 text-xs text-slate-500">已启用 {enabledCount} / {CHANNELS.length}</p>
+                        <p className="mt-1 text-xs text-fg-3">已启用 {enabledCount} / {CHANNELS.length}</p>
                     </CardHeader>
                     <CardContent className="p-3">
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-1">
@@ -541,25 +541,25 @@ export default function NotificationChannels() {
                                 const selected = selectedType === channel.type;
                                 return (
                                     <div key={channel.type} className={cn(
-                                        'flex min-w-0 items-center gap-2 rounded-xl border p-2 transition-colors',
-                                        selected ? 'border-blue-200 bg-blue-50' : 'border-transparent hover:bg-slate-50',
+                                        'flex min-w-0 items-center gap-2 rounded-md border p-2 transition-colors',
+                                        selected ? 'border-brand/30 bg-brand-soft' : 'border-transparent hover:bg-surface-2',
                                     )}>
                                         <button type="button" onClick={() => setSelectedType(channel.type)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                                             <span className={cn(
-                                                'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                                                selected ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500',
+                                                'flex size-9 shrink-0 items-center justify-center rounded-md',
+                                                selected ? 'bg-surface text-brand' : 'bg-surface-2 text-fg-3',
                                             )}>
                                                 <Icon className="size-4"/>
                                             </span>
                                             <span className="min-w-0 flex-1">
-                                                <span className="block truncate text-sm font-semibold text-slate-800">{channel.name}</span>
-                                                <span className="mt-0.5 block truncate text-[10px] text-slate-400">{enabled ? '已启用' : '未启用'}</span>
+                                                <span className="block truncate text-sm font-semibold text-fg-2">{channel.name}</span>
+                                                <span className="mt-0.5 block truncate text-[10px] text-fg-3">{enabled ? '已启用' : '未启用'}</span>
                                             </span>
                                         </button>
                                         <Switch
                                             checked={enabled}
                                             onCheckedChange={(checked) => updateField(channel.enabledField, checked)}
-                                            className="data-[state=checked]:bg-blue-600"
+                                            className="data-[state=checked]:bg-brand"
                                             aria-label={`${enabled ? '停用' : '启用'}${channel.name}`}
                                         />
                                     </div>
@@ -570,10 +570,10 @@ export default function NotificationChannels() {
                 </Card>
 
                 <Card className="gap-0 overflow-hidden py-0">
-                    <CardHeader className="border-b border-slate-100 py-5">
+                    <CardHeader className="border-b border-line-soft py-5">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                             <div className="flex items-center gap-3">
-                                <span className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                                <span className="flex size-10 items-center justify-center rounded-md bg-brand-soft text-brand">
                                     <SelectedIcon className="size-5"/>
                                 </span>
                                 <div>
@@ -581,12 +581,12 @@ export default function NotificationChannels() {
                                         <CardTitle className="text-base">{selectedChannel.name}</CardTitle>
                                         <span className={cn(
                                             'rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                                            selectedEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500',
+                                            selectedEnabled ? 'bg-ok/10 text-ok' : 'bg-surface-2 text-fg-3',
                                         )}>
                                             {selectedEnabled ? '已启用' : '未启用'}
                                         </span>
                                     </div>
-                                    <p className="mt-1 text-xs text-slate-500">{selectedChannel.description}</p>
+                                    <p className="mt-1 text-xs text-fg-3">{selectedChannel.description}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -603,7 +603,7 @@ export default function NotificationChannels() {
                                     size="sm"
                                     disabled={!selectedEnabled || Boolean(draft) || testMutation.isPending}
                                     onClick={() => testMutation.mutate(selectedType)}
-                                    className="border-blue-200 text-blue-700 hover:bg-blue-50"
+                                    className="border-brand/30 text-brand hover:bg-brand-soft"
                                     title={draft ? '请先保存当前配置' : undefined}
                                 >
                                     {testingSelected ? <Loader2 className="size-3.5 animate-spin"/> : <TestTube className="size-3.5"/>}
@@ -615,8 +615,8 @@ export default function NotificationChannels() {
 
                     <CardContent className="py-6">
                         {!selectedEnabled && (
-                            <div className="mb-5 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs text-slate-500">
-                                <span className="size-1.5 rounded-full bg-slate-300"/>
+                            <div className="mb-5 flex items-center gap-2 rounded-md border border-line bg-surface-2 px-3.5 py-3 text-xs text-fg-3">
+                                <span className="size-1.5 rounded-full bg-fg-3"/>
                                 当前渠道未启用，启用后才能编辑配置。
                             </div>
                         )}
@@ -627,8 +627,8 @@ export default function NotificationChannels() {
                             {renderConfig()}
                         </fieldset>
                         {draft && (
-                            <div className="mt-6 flex items-center gap-2 border-t border-slate-100 pt-4 text-xs text-amber-700">
-                                <span className="size-1.5 rounded-full bg-amber-500"/>
+                            <div className="mt-6 flex items-center gap-2 border-t border-line-soft pt-4 text-xs text-warn">
+                                <span className="size-1.5 rounded-full bg-warn"/>
                                 当前配置尚未保存，保存后才能发送测试通知。
                             </div>
                         )}

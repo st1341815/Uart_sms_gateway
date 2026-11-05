@@ -38,7 +38,7 @@ export function DeviceSelector({
                                 selectedDevice.connected ? "bg-green-600" : "bg-red-600"
                             )} />
                             <span className="truncate">{selectedDevice.name}</span>
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-fg-3">
                                 ({selectedDevice.connected ? '在线' : '离线'})
                             </span>
                         </div>
@@ -57,10 +57,10 @@ export function DeviceSelector({
                                 device.connected ? "bg-green-600" : "bg-red-600"
                             )} />
                             <span className="font-medium">{device.name}</span>
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-fg-3">
                                 ({device.connected ? '在线' : '离线'})
                             </span>
-                            <span className="text-xs text-gray-400 font-mono ml-auto">
+                            <span className="text-xs text-fg-3 font-mono ml-auto">
                                 {device.operator || '-'}
                             </span>
                         </div>

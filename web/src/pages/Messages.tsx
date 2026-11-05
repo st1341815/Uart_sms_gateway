@@ -28,12 +28,12 @@ import {cn} from '@/lib/utils';
 import {useMediaQuery} from '@/lib/use-media-query';
 
 const AVATAR_TONES = [
-    'bg-blue-700',
-    'bg-slate-600',
-    'bg-blue-600',
-    'bg-indigo-600',
-    'bg-sky-700',
-    'bg-slate-700',
+    'bg-brand',
+    'bg-surface-3',
+    'bg-brand',
+    'bg-brand',
+    'bg-brand',
+    'bg-surface-3',
 ];
 
 const getAvatarTone = (peer: string) => {
@@ -60,11 +60,11 @@ const formatTime = (timestamp: number) => {
 function StatusBadge({status}: {status: TextMessage['status']}) {
     switch (status) {
         case 'sent':
-            return <span className="font-semibold text-emerald-600">✓ 已发送</span>;
+            return <span className="font-semibold text-ok">✓ 已发送</span>;
         case 'failed':
-            return <span className="font-semibold text-rose-600">✗ 失败</span>;
+            return <span className="font-semibold text-err">✗ 失败</span>;
         case 'sending':
-            return <span className="font-semibold text-slate-400">发送中…</span>;
+            return <span className="font-semibold text-fg-3">发送中…</span>;
         default:
             return null;
     }
@@ -322,8 +322,8 @@ export default function Messages() {
 
     if (isLoading) {
         return (
-            <div className="flex min-h-[60vh] items-center justify-center gap-2 text-sm text-slate-500">
-                <Loader2 className="size-4 animate-spin text-blue-600"/>
+            <div className="flex min-h-[60vh] items-center justify-center gap-2 text-sm text-fg-3">
+                <Loader2 className="size-4 animate-spin text-brand"/>
                 正在读取会话
             </div>
         );
@@ -354,7 +354,7 @@ export default function Messages() {
                     <Button
                         onClick={() => setComposeOpen(true)}
                         size="sm"
-                        className="bg-blue-600 text-white hover:bg-blue-700"
+                        className="bg-brand text-brand-fg hover:bg-brand"
                     >
                         <Plus className="mr-2 size-4"/>
                         新建短信
@@ -363,7 +363,7 @@ export default function Messages() {
                         onClick={() => refetch()}
                         variant="outline"
                         size="sm"
-                        className="hover:bg-slate-50"
+                        className="hover:bg-surface-2"
                         title="刷新会话列表"
                     >
                         <RefreshCw className={cn('size-4', isFetching && 'animate-spin')}/>
@@ -371,14 +371,14 @@ export default function Messages() {
                     </Button>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" className="hover:bg-slate-50">
+                            <Button variant="outline" size="sm" className="hover:bg-surface-2">
                                 <MoreVertical className="size-4"/>
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                             <DropdownMenuItem
                                 onClick={handleClear}
-                                className="cursor-pointer text-rose-600 focus:bg-rose-50 focus:text-rose-700"
+                                className="cursor-pointer text-err focus:bg-err/10 focus:text-err"
                             >
                                 <Trash2 className="mr-2 size-4"/>
                                 清空所有短信
@@ -388,32 +388,32 @@ export default function Messages() {
                 </div>}
             />
 
-            <div className="mt-6 flex min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="mt-6 flex min-h-0 flex-1 overflow-hidden rounded-md border border-line bg-surface">
                 {/* 会话列表 */}
                 <div className={cn(
-                    'w-full flex-col border-slate-200 md:flex md:w-[300px] md:border-r xl:w-[330px]',
+                    'w-full flex-col border-line md:flex md:w-[300px] md:border-r xl:w-[330px]',
                     selectedPeer ? 'hidden' : 'flex',
                 )}>
-                    <div className="border-b border-slate-100 p-4">
+                    <div className="border-b border-line-soft p-4">
                         <div className="relative">
-                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"/>
+                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-3"/>
                             <Input
                                 type="text"
                                 placeholder="搜索号码或内容..."
                                 value={searchQuery}
                                 onChange={(event) => setSearchQuery(event.target.value)}
-                                className="h-9 border-transparent bg-slate-100/70 pl-9 pr-3 focus-visible:border-blue-500 focus-visible:bg-white"
+                                className="h-9 border-transparent bg-surface-2/70 pl-9 pr-3 focus-visible:border-brand focus-visible:bg-surface"
                             />
                         </div>
                         <div className="mt-2 flex items-center justify-between px-1">
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[11px] text-fg-3">
                                 {groupedConversations.length > 0 && `${groupedConversations.length} 个号码 · ${filteredConversations.length} 个会话`}
                             </span>
                             {groupedConversations.length > 1 && (
                                 <button
                                     type="button"
                                     onClick={toggleAllGroups}
-                                    className="rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-600 transition-colors hover:bg-blue-50"
+                                    className="rounded px-1.5 py-0.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand-soft"
                                 >
                                     {allCollapsed ? '全部展开' : '全部折叠'}
                                 </button>
@@ -423,7 +423,7 @@ export default function Messages() {
 
                     <div className="flex-1 overflow-y-auto">
                         {filteredConversations.length === 0 ? (
-                            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-slate-400">
+                            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-fg-3">
                                 <UserRound className="size-10 opacity-25"/>
                                 <p className="text-sm font-medium">{conversations.length === 0 ? '暂无会话' : '没有匹配的会话'}</p>
                                 <p className="text-xs">{conversations.length === 0 ? '收到或发送第一条短信后会自动创建会话' : '换个关键词试试'}</p>
@@ -439,26 +439,26 @@ export default function Messages() {
                                             type="button"
                                             onClick={() => toggleGroup(group.deviceId)}
                                             aria-expanded={!collapsedGroups.has(groupKeyOf(group.deviceId))}
-                                            className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-slate-100 bg-slate-50/95 px-3 py-2 text-left backdrop-blur transition-colors hover:bg-slate-100"
+                                            className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-line-soft bg-surface-2/95 px-3 py-2 text-left backdrop-blur transition-colors hover:bg-surface-2"
                                         >
                                             <ChevronDown
                                                 className={cn(
-                                                    'size-3.5 shrink-0 text-slate-400 transition-transform duration-150',
+                                                    'size-3.5 shrink-0 text-fg-3 transition-transform duration-150',
                                                     collapsedGroups.has(groupKeyOf(group.deviceId)) && '-rotate-90',
                                                 )}
                                             />
-                                            <span className="truncate text-[11px] font-bold text-slate-600">
+                                            <span className="truncate text-[11px] font-bold text-fg-2">
                                                 {group.deviceId ? (device?.name || group.deviceId) : '未标记设备'}
                                             </span>
                                             {device?.phoneNumber && (
-                                                <span className="shrink-0 font-mono text-[10px] text-slate-400">
+                                                <span className="shrink-0 font-mono text-[10px] text-fg-3">
                                                     {device.phoneNumber}
                                                 </span>
                                             )}
                                             {device && !device.connected && (
-                                                <span className="shrink-0 rounded bg-slate-200 px-1 text-[9px] text-slate-500">离线</span>
+                                                <span className="shrink-0 rounded bg-surface-3 px-1 text-[9px] text-fg-3">离线</span>
                                             )}
-                                            <span className="ml-auto shrink-0 rounded-full bg-slate-200/70 px-1.5 text-[10px] font-medium text-slate-500">
+                                            <span className="ml-auto shrink-0 rounded-full bg-surface-3/70 px-1.5 text-[10px] font-medium text-fg-3">
                                                 {group.items.length}
                                             </span>
                                         </button>
@@ -471,7 +471,7 @@ export default function Messages() {
                                                     onClick={() => setPeerSelection(convKey(conv.deviceId, conv.peer))}
                                                     className={cn(
                                                         'flex w-full items-start gap-2.5 border-l-2 px-4 py-3.5 text-left transition-colors',
-                                                        active ? 'border-blue-600 bg-blue-50/60' : 'border-transparent hover:bg-slate-50',
+                                                        active ? 'border-brand bg-brand-soft' : 'border-transparent hover:bg-surface-2',
                                                     )}
                                                 >
                                                     <span className={cn(
@@ -482,14 +482,14 @@ export default function Messages() {
                                                     </span>
                                                     <span className="min-w-0 flex-1">
                                                         <span className="flex items-baseline justify-between gap-2">
-                                                            <span className={cn('truncate text-sm font-semibold', active ? 'text-slate-950' : 'text-slate-700')}>
+                                                            <span className={cn('truncate text-sm font-semibold', active ? 'text-fg' : 'text-fg-2')}>
                                                                 {conv.peer}
                                                             </span>
-                                                            <span className="shrink-0 text-[10px] text-slate-400">
+                                                            <span className="shrink-0 text-[10px] text-fg-3">
                                                                 {formatTime(conv.lastMessage.createdAt)}
                                                             </span>
                                                         </span>
-                                                        <span className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+                                                        <span className="mt-0.5 line-clamp-1 text-xs text-fg-3">
                                                             {conv.lastMessage.type === 'outgoing' && '我: '}
                                                             {conv.lastMessage.content}
                                                         </span>
@@ -499,7 +499,7 @@ export default function Messages() {
                                         })}
                                         {/* 折叠态给一行提示，避免分组头下面空一块看不明白 */}
                                         {collapsedGroups.has(groupKeyOf(group.deviceId)) && (
-                                            <div className="px-4 pb-2 pt-0.5 text-[10px] text-slate-400">
+                                            <div className="px-4 pb-2 pt-0.5 text-[10px] text-fg-3">
                                                 已折叠 {group.items.length} 个会话
                                             </div>
                                         )}
@@ -512,10 +512,10 @@ export default function Messages() {
 
                 {/* 会话详情 */}
                 <div className={cn(
-                    'flex-1 flex-col bg-slate-50/40',
+                    'flex-1 flex-col bg-surface-2/40',
                     selectedPeer ? 'flex' : 'hidden md:flex',
                 )}>
-                    <div className="flex h-15 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 md:px-6">
+                    <div className="flex h-15 shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 md:px-6">
                         {selectedPeer ? (
                             <>
                                 <div className="flex min-w-0 items-center gap-3">
@@ -523,7 +523,7 @@ export default function Messages() {
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => setPeerSelection(null)}
-                                        className="-ml-2 text-slate-600 md:hidden"
+                                        className="-ml-2 text-fg-2 md:hidden"
                                         aria-label="返回会话列表"
                                     >
                                         <ChevronLeft className="size-5"/>
@@ -535,31 +535,31 @@ export default function Messages() {
                                         {selectedPeer.slice(-2)}
                                     </span>
                                     <div className="min-w-0">
-                                        <h3 className="truncate text-sm font-bold text-slate-900">{selectedPeer}</h3>
-                                        <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                                        <h3 className="truncate text-sm font-bold text-fg">{selectedPeer}</h3>
+                                        <span className="flex items-center gap-1.5 text-xs text-fg-3">
                                             {/* 标明这张卡：多卡共用一个界面，不写出来就分不清在跟哪个号通信 */}
                                             <span className={cn(
                                                 'size-1.5 shrink-0 rounded-full',
-                                                selectedConvDevice?.connected ? 'bg-emerald-500' : 'bg-slate-300',
+                                                selectedConvDevice?.connected ? 'bg-ok' : 'bg-fg-3',
                                             )} />
                                             <span className="truncate">
                                                 {selectedConvDevice?.name || selectedConvDeviceId || '未标记设备'}
                                             </span>
-                                            <span className="shrink-0 text-slate-300">·</span>
+                                            <span className="shrink-0 text-fg-3">·</span>
                                             <span className="shrink-0">共 {activeConversation?.messageCount ?? 0} 条消息</span>
                                         </span>
                                     </div>
                                 </div>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-600" aria-label="会话操作">
+                                        <Button variant="ghost" size="sm" className="text-fg-3 hover:text-fg-2" aria-label="会话操作">
                                             <MoreVertical className="size-4"/>
                                         </Button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                         <DropdownMenuItem
                                             onClick={handleDeleteConversation}
-                                            className="cursor-pointer text-rose-600 focus:bg-rose-50 focus:text-rose-700"
+                                            className="cursor-pointer text-err focus:bg-err/10 focus:text-err"
                                         >
                                             <Trash2 className="mr-2 size-4"/>
                                             删除会话
@@ -568,7 +568,7 @@ export default function Messages() {
                                 </DropdownMenu>
                             </>
                         ) : (
-                            <span className="text-sm text-slate-400">请选择会话</span>
+                            <span className="text-sm text-fg-3">请选择会话</span>
                         )}
                     </div>
 
@@ -584,17 +584,17 @@ export default function Messages() {
                                         >
                                             <div className={cn('relative flex max-w-[82%] flex-col sm:max-w-[75%] xl:max-w-[68%]', outgoing ? 'items-end' : 'items-start')}>
                                                 <div className={cn(
-                                                    'relative rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
+                                                    'relative rounded-md px-4 py-2.5 text-sm leading-relaxed',
                                                     outgoing
-                                                        ? 'rounded-tr-sm bg-[#0b2a55] text-white'
-                                                        : 'rounded-tl-sm border border-slate-200 bg-white text-slate-800',
+                                                        ? 'rounded-tr-sm bg-surface-3 text-white'
+                                                        : 'rounded-tl-sm border border-line bg-surface text-fg-2',
                                                 )}>
                                                     <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                                                     <button
                                                         type="button"
                                                         onClick={(event) => handleDeleteMessage(msg.id, event)}
                                                         className={cn(
-                                                            'absolute -top-2 rounded-full border border-rose-200 bg-white p-1 text-rose-500 opacity-0 transition-opacity hover:bg-rose-50 group-hover:opacity-100 focus-visible:opacity-100',
+                                                            'absolute -top-2 rounded-full border border-err/30 bg-surface p-1 text-err opacity-0 transition-opacity hover:bg-err/10 group-hover:opacity-100 focus-visible:opacity-100',
                                                             outgoing ? '-left-2' : '-right-2',
                                                         )}
                                                         title="删除消息"
@@ -607,14 +607,14 @@ export default function Messages() {
                                                     'mt-1 flex items-center gap-2 px-1',
                                                     outgoing && 'flex-row-reverse',
                                                 )}>
-                                                    <span className="text-[10px] text-slate-400">{formatTime(msg.createdAt)}</span>
+                                                    <span className="text-[10px] text-fg-3">{formatTime(msg.createdAt)}</span>
                                                     {msg.deviceId && (
                                                         <span
                                                             className={cn(
                                                                 'rounded border px-1.5 py-0.5 text-[10px]',
                                                                 outgoing
-                                                                    ? 'border-blue-200 bg-blue-50 text-blue-700'
-                                                                    : 'border-slate-200 bg-slate-50 text-slate-600',
+                                                                    ? 'border-brand/30 bg-brand-soft text-brand'
+                                                                    : 'border-line bg-surface-2 text-fg-2',
                                                             )}
                                                             title={`来源设备: ${deviceLabel(msg.deviceId)}`}
                                                         >
@@ -630,7 +630,7 @@ export default function Messages() {
                                 <div ref={messagesEndRef}/>
                             </div>
                         ) : (
-                            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-slate-400">
+                            <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-fg-3">
                                 <Send className="size-10 opacity-20"/>
                                 <p className="text-sm font-medium">
                                     {selectedPeer ? '暂无消息' : '选择左侧会话开始查看'}
@@ -642,7 +642,7 @@ export default function Messages() {
                         )}
                     </div>
 
-                    <div className="border-t border-slate-200 bg-white p-4">
+                    <div className="border-t border-line bg-surface p-4">
                         <form className="flex gap-3" onSubmit={handleSend}>
                             {/* 发送设备：必选，多卡场景避免从非预期号码发出 */}
                             <select
@@ -652,10 +652,10 @@ export default function Messages() {
                                 title="选择从哪张卡发送"
                                 aria-label="发送设备"
                                 className={cn(
-                                    'h-10 shrink-0 rounded-lg border px-2 text-sm outline-none transition-colors',
+                                    'h-10 shrink-0 rounded-md border px-2 text-sm outline-none transition-colors',
                                     effectiveSendDeviceId
-                                        ? 'border-slate-200 bg-slate-50 text-slate-700 focus:border-blue-500'
-                                        : 'border-amber-300 bg-amber-50 text-amber-700',
+                                        ? 'border-line bg-surface-2 text-fg-2 focus:border-brand'
+                                        : 'border-warn/40 bg-warn/10 text-warn',
                                 )}
                             >
                                 <option value="">选择设备</option>
@@ -678,12 +678,12 @@ export default function Messages() {
                                             : `通过 ${sendingVia?.name ?? effectiveSendDeviceId} 发送...`
                                 }
                                 disabled={!selectedPeer || sendMutation.isPending}
-                                className="h-10 flex-1 border-slate-200 bg-slate-50 focus-visible:border-blue-500 focus-visible:bg-white"
+                                className="h-10 flex-1 border-line bg-surface-2 focus-visible:border-brand focus-visible:bg-surface"
                             />
                             <Button
                                 type="submit"
                                 disabled={!selectedPeer || !effectiveSendDeviceId || !inputText.trim() || sendMutation.isPending}
-                                className="h-10 bg-[#0b2a55] px-6 text-white hover:bg-slate-800"
+                                className="h-10 bg-brand px-6 text-brand-fg hover:opacity-90"
                             >
                                 {sendMutation.isPending ? (
                                     <Loader2 className="size-4 animate-spin"/>
@@ -696,9 +696,9 @@ export default function Messages() {
                             </Button>
                         </form>
                         {selectedPeer && (
-                            <p className="mt-2 text-[11px] text-slate-400">
+                            <p className="mt-2 text-[11px] text-fg-3">
                                 {sendingVia
-                                    ? <>回复将从 <span className="font-medium text-slate-600">{sendingVia.name}</span> 送出。</>
+                                    ? <>回复将从 <span className="font-medium text-fg-2">{sendingVia.name}</span> 送出。</>
                                     : <>请先在左侧下拉中选择发送设备（多卡场景必须明确来源，避免误用漫游卡）。</>}
                             </p>
                         )}
@@ -717,20 +717,20 @@ export default function Messages() {
 
                         <div className="space-y-5 py-5">
                             <div className="space-y-1.5">
-                                <label className="block text-sm font-medium text-slate-800">发送设备</label>
+                                <label className="block text-sm font-medium text-fg-2">发送设备</label>
                                 <Select value={composeDeviceId} onValueChange={setComposeDeviceSelection}>
-                                    <SelectTrigger className="h-10 w-full border-slate-200 bg-slate-50">
+                                    <SelectTrigger className="h-10 w-full border-line bg-surface-2">
                                         <SelectValue placeholder="选择设备"/>
                                     </SelectTrigger>
                                     <SelectContent>
                                         {devices.length === 0 ? (
-                                            <div className="px-3 py-2 text-xs text-slate-400">尚未配置设备</div>
+                                            <div className="px-3 py-2 text-xs text-fg-3">尚未配置设备</div>
                                         ) : devices.map((device) => (
                                             <SelectItem key={device.id} value={device.id}>
                                                 <span className="flex items-center gap-2">
-                                                    <span className={cn('size-1.5 rounded-full', device.connected ? 'bg-emerald-500' : 'bg-slate-300')}/>
+                                                    <span className={cn('size-1.5 rounded-full', device.connected ? 'bg-ok' : 'bg-fg-3')}/>
                                                     <span className="font-medium">{device.name}</span>
-                                                    <span className="font-mono text-[10px] text-slate-400">{device.operator || '未注册'}</span>
+                                                    <span className="font-mono text-[10px] text-fg-3">{device.operator || '未注册'}</span>
                                                 </span>
                                             </SelectItem>
                                         ))}
@@ -739,7 +739,7 @@ export default function Messages() {
                             </div>
 
                             <div className="space-y-1.5">
-                                <label htmlFor="compose-recipient" className="block text-sm font-medium text-slate-800">目标号码</label>
+                                <label htmlFor="compose-recipient" className="block text-sm font-medium text-fg-2">目标号码</label>
                                 <Input
                                     id="compose-recipient"
                                     type="tel"
@@ -747,27 +747,27 @@ export default function Messages() {
                                     onChange={(event) => setNewRecipient(event.target.value)}
                                     placeholder="请输入手机号"
                                     autoComplete="tel"
-                                    className="bg-slate-50 font-mono focus-visible:bg-white"
+                                    className="bg-surface-2 font-mono focus-visible:bg-surface"
                                     autoFocus
                                 />
                             </div>
 
                             <div className="space-y-1.5">
                                 <div className="flex items-center justify-between">
-                                    <label htmlFor="compose-content" className="block text-sm font-medium text-slate-800">短信内容</label>
-                                    <span className="text-xs text-slate-400">{newContent.length} 字</span>
+                                    <label htmlFor="compose-content" className="block text-sm font-medium text-fg-2">短信内容</label>
+                                    <span className="text-xs text-fg-3">{newContent.length} 字</span>
                                 </div>
                                 <Textarea
                                     id="compose-content"
                                     value={newContent}
                                     onChange={(event) => setNewContent(event.target.value)}
                                     placeholder="请输入短信内容"
-                                    className="min-h-32 resize-none bg-slate-50 focus-visible:bg-white"
+                                    className="min-h-32 resize-none bg-surface-2 focus-visible:bg-surface"
                                 />
                             </div>
 
                             {onlineDevices.length === 0 && (
-                                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs leading-5 text-rose-700">
+                                <p className="rounded-md border border-err/30 bg-err/10 px-3.5 py-3 text-xs leading-5 text-err">
                                     当前没有在线设备，串口连接成功后才能发送短信。
                                 </p>
                             )}
@@ -780,7 +780,7 @@ export default function Messages() {
                             <Button
                                 type="submit"
                                 disabled={onlineDevices.length === 0 || !newRecipient.trim() || !newContent.trim() || sendMutation.isPending}
-                                className="bg-blue-600 text-white hover:bg-blue-700"
+                                className="bg-brand text-brand-fg hover:bg-brand"
                             >
                                 {sendMutation.isPending ? <Loader2 className="size-4 animate-spin"/> : <Send className="size-4"/>}
                                 {sendMutation.isPending ? '发送中...' : '发送短信'}

@@ -81,13 +81,13 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
     return (
         <>
             <Card className="gap-0 py-0">
-                <CardHeader className="border-b border-slate-100 py-5">
+                <CardHeader className="border-b border-line-soft py-5">
                     <div>
                         <CardTitle className="flex items-center gap-2 text-base">
-                            <MessageSquare className="size-4 text-blue-600"/>
+                            <MessageSquare className="size-4 text-brand"/>
                             短信重置密码
                         </CardTitle>
-                        <p className="mt-1.5 text-xs text-slate-500">
+                        <p className="mt-1.5 text-xs text-fg-3">
                             生成一个随机新密码并发送到你的手机。新密码只出现在短信里，页面不显示。
                         </p>
                     </div>
@@ -98,9 +98,9 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
                         <div className="space-y-1.5">
                             <label
                                 htmlFor="reset-phone"
-                                className="flex items-center gap-1.5 text-xs font-semibold text-slate-700"
+                                className="flex items-center gap-1.5 text-xs font-semibold text-fg-2"
                             >
-                                <Smartphone className="size-3.5 text-slate-400"/>
+                                <Smartphone className="size-3.5 text-fg-3"/>
                                 接收手机号
                             </label>
                             <Input
@@ -113,16 +113,16 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
                                         : '如 13800138000'
                                 }
                                 autoComplete="tel"
-                                className="h-11 bg-slate-50 font-mono text-sm focus-visible:bg-white"
+                                className="h-11 bg-surface-2 font-mono text-sm focus-visible:bg-surface"
                             />
-                            <p className="text-[11px] leading-5 text-slate-400">
-                                支持带 <code className="rounded bg-slate-100 px-1">+</code> 的国际区号；留空则使用已保存的号码。
+                            <p className="text-[11px] leading-5 text-fg-3">
+                                支持带 <code className="rounded bg-surface-2 px-1">+</code> 的国际区号；留空则使用已保存的号码。
                             </p>
                         </div>
 
                         <div className="space-y-1.5">
-                            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                                <MessageSquare className="size-3.5 text-slate-400"/>
+                            <label className="flex items-center gap-1.5 text-xs font-semibold text-fg-2">
+                                <MessageSquare className="size-3.5 text-fg-3"/>
                                 发送设备
                             </label>
                             <DeviceSelector
@@ -131,25 +131,25 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
                                 onSelect={setDeviceId}
                                 disabled={mutation.isPending}
                             />
-                            <p className="text-[11px] leading-5 text-slate-400">
+                            <p className="text-[11px] leading-5 text-fg-3">
                                 短信从所选 SIM 卡发出，请挑一张不会产生国际资费的卡。
                             </p>
                         </div>
 
-                        <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
-                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-rose-600"/>
-                            <p className="text-xs leading-5 text-rose-900">
+                        <div className="flex items-start gap-3 rounded-md border border-err/30 bg-err/10 p-3">
+                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-err"/>
+                            <p className="text-xs leading-5 text-err">
                                 确认后<strong className="font-semibold">旧密码立即失效</strong>，当前登录也会退出。
                                 如果短信发不出去，密码会保持不变 —— 不会把你锁在门外。
                             </p>
                         </div>
 
-                        <div className="border-t border-slate-100 pt-5">
+                        <div className="border-t border-line-soft pt-5">
                             <Button
                                 type="button"
                                 onClick={handleClick}
                                 disabled={mutation.isPending}
-                                className="h-10 bg-blue-600 px-6 text-white hover:bg-blue-700"
+                                className="h-10 bg-brand px-6 text-brand-fg hover:bg-brand"
                             >
                                 <MessageSquare className="size-4"/>
                                 发送新密码到手机
@@ -164,18 +164,18 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
                     <DialogHeader>
                         <DialogTitle>确认重置密码？</DialogTitle>
                         <DialogDescription asChild>
-                            <div className="space-y-2 pt-1 text-sm text-slate-600">
+                            <div className="space-y-2 pt-1 text-sm text-fg-2">
                                 <p>
                                     新密码将发送至{' '}
-                                    <span className="font-mono font-semibold text-slate-900">{targetLabel}</span>
+                                    <span className="font-mono font-semibold text-fg">{targetLabel}</span>
                                 </p>
                                 <p>
                                     发送设备：{' '}
-                                    <span className="font-semibold text-slate-900">
+                                    <span className="font-semibold text-fg">
                                         {selectedDevice?.name || deviceId || '未选择'}
                                     </span>
                                 </p>
-                                <p className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs leading-5 text-rose-900">
+                                <p className="rounded-md border border-err/30 bg-err/10 p-2.5 text-xs leading-5 text-err">
                                     请确认手机能正常收到短信。密码一旦重置，旧密码不可恢复。
                                 </p>
                             </div>
@@ -190,7 +190,7 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
                             取消
                         </Button>
                         <Button
-                            className="bg-rose-600 text-white hover:bg-rose-700"
+                            className="bg-err text-white hover:bg-err"
                             disabled={mutation.isPending}
                             onClick={() =>
                                 mutation.mutate({

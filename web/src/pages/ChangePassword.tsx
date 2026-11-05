@@ -7,6 +7,7 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {PageHeader} from '@/components/PageHeader';
+import {APP_REPO_URL, APP_VERSION} from '@/lib/version.ts';
 import {SmsResetPasswordCard} from '@/components/SmsResetPasswordCard';
 import {changePassword, getMe} from '../api/auth';
 import {cn} from '@/lib/utils';
@@ -21,9 +22,9 @@ function strengthOf(pw: string): {level: number; text: string; tone: string} {
     if (/[^a-zA-Z0-9]/.test(pw)) score++;
 
     if (pw.length === 0) return {level: 0, text: '', tone: ''};
-    if (score <= 2) return {level: 1, text: '弱', tone: 'bg-rose-500'};
-    if (score <= 3) return {level: 2, text: '中', tone: 'bg-amber-500'};
-    return {level: 3, text: '强', tone: 'bg-emerald-500'};
+    if (score <= 2) return {level: 1, text: '弱', tone: 'bg-err'};
+    if (score <= 3) return {level: 2, text: '中', tone: 'bg-warn'};
+    return {level: 3, text: '强', tone: 'bg-ok'};
 }
 
 interface PasswordFieldProps {
@@ -43,10 +44,10 @@ function PasswordField({id, label, value, onChange, placeholder, autoComplete, i
 
     return (
         <div className="space-y-1.5">
-            <label htmlFor={id} className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                <Icon className="size-3.5 text-slate-400"/>
+            <label htmlFor={id} className="flex items-center gap-1.5 text-xs font-semibold text-fg-2">
+                <Icon className="size-3.5 text-fg-3"/>
                 {label}
-                <span className="text-rose-500">*</span>
+                <span className="text-err">*</span>
             </label>
             <div className="relative">
                 <Input
@@ -57,8 +58,8 @@ function PasswordField({id, label, value, onChange, placeholder, autoComplete, i
                     placeholder={placeholder}
                     autoComplete={autoComplete}
                     className={cn(
-                        'h-11 bg-slate-50 pr-10 font-mono text-sm focus-visible:bg-white',
-                        invalid ? 'border-rose-400 focus-visible:border-rose-500' : 'focus-visible:border-blue-500',
+                        'h-11 bg-surface-2 pr-10 font-mono text-sm focus-visible:bg-surface',
+                        invalid ? 'border-err focus-visible:border-err' : 'focus-visible:border-brand',
                     )}
                 />
                 <button
@@ -66,7 +67,7 @@ function PasswordField({id, label, value, onChange, placeholder, autoComplete, i
                     onClick={() => setVisible(!visible)}
                     tabIndex={-1}
                     aria-label={visible ? '隐藏密码' : '显示密码'}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-3 transition hover:text-fg-2"
                 >
                     {visible ? <EyeOff className="size-4"/> : <Eye className="size-4"/>}
                 </button>
@@ -153,18 +154,18 @@ export default function ChangePassword() {
             <div className="mt-6 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.55fr)]">
                 <div className="grid gap-4">
                 <Card className="gap-0 py-0">
-                    <CardHeader className="border-b border-slate-100 py-5">
+                    <CardHeader className="border-b border-line-soft py-5">
                         <div className="flex items-center justify-between gap-4">
                             <div>
                                 <CardTitle className="flex items-center gap-2 text-base">
-                                    <ShieldCheck className="size-4 text-blue-600"/>
+                                    <ShieldCheck className="size-4 text-brand"/>
                                     修改密码
                                 </CardTitle>
-                                <p className="mt-1.5 text-xs text-slate-500">至少 8 位、最多 72 位，需同时包含字母和数字</p>
+                                <p className="mt-1.5 text-xs text-fg-3">至少 8 位、最多 72 位，需同时包含字母和数字</p>
                             </div>
-                            <div className="flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs">
-                                <UserRound className="size-3.5 text-slate-400"/>
-                                <span className="font-mono font-semibold text-slate-700">{me?.username || '—'}</span>
+                            <div className="flex shrink-0 items-center gap-2 rounded-full border border-line bg-surface-2 px-3 py-1.5 text-xs">
+                                <UserRound className="size-3.5 text-fg-3"/>
+                                <span className="font-mono font-semibold text-fg-2">{me?.username || '—'}</span>
                             </div>
                         </div>
                     </CardHeader>
@@ -198,12 +199,12 @@ export default function ChangePassword() {
                                                     key={step}
                                                     className={cn(
                                                         'h-1 flex-1 rounded-full transition-colors',
-                                                        strength.level >= step ? strength.tone : 'bg-slate-200',
+                                                        strength.level >= step ? strength.tone : 'bg-surface-3',
                                                     )}
                                                 />
                                             ))}
                                         </div>
-                                        <span className="w-8 text-right text-[10px] font-semibold text-slate-500">
+                                        <span className="w-8 text-right text-[10px] font-semibold text-fg-3">
                                             {strength.text}
                                         </span>
                                     </div>
@@ -221,15 +222,15 @@ export default function ChangePassword() {
                                     invalid={mismatch}
                                 />
                                 {mismatch && (
-                                    <p className="mt-1.5 text-xs text-rose-500">两次输入的新密码不一致</p>
+                                    <p className="mt-1.5 text-xs text-err">两次输入的新密码不一致</p>
                                 )}
                             </div>
 
-                            <div className="flex items-center gap-3 border-t border-slate-100 pt-5">
+                            <div className="flex items-center gap-3 border-t border-line-soft pt-5">
                                 <Button
                                     type="submit"
                                     disabled={!canSubmit}
-                                    className="h-10 bg-blue-600 px-6 text-white hover:bg-blue-700"
+                                    className="h-10 bg-brand px-6 text-brand-fg hover:bg-brand"
                                 >
                                     {mutation.isPending && <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"/>}
                                     {mutation.isPending ? '提交中...' : '确认修改'}
@@ -247,18 +248,18 @@ export default function ChangePassword() {
 
                 <div className="grid gap-4">
                     <Card className="gap-0 py-0">
-                        <CardHeader className="border-b border-slate-100 py-4">
+                        <CardHeader className="border-b border-line-soft py-4">
                             <CardTitle className="text-sm">密码要求</CardTitle>
                         </CardHeader>
                         <CardContent className="py-4">
-                            <ul className="space-y-2.5 text-xs leading-5 text-slate-600">
+                            <ul className="space-y-2.5 text-xs leading-5 text-fg-2">
                                 {[
                                     '长度至少 8 位，最多 72 位',
                                     '必须同时包含字母和数字',
                                     '不能与当前密码相同',
                                 ].map((rule) => (
                                     <li key={rule} className="flex items-start gap-2">
-                                        <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-blue-500"/>
+                                        <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand"/>
                                         {rule}
                                     </li>
                                 ))}
@@ -266,23 +267,26 @@ export default function ChangePassword() {
                         </CardContent>
                     </Card>
 
-                    <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
-                        <Info className="mt-0.5 size-4 shrink-0 text-amber-600"/>
-                        <div className="text-xs leading-6 text-amber-900">
+                    <div className="flex gap-3 rounded-md border border-warn/30 bg-warn/10 p-4">
+                        <Info className="mt-0.5 size-4 shrink-0 text-warn"/>
+                        <div className="text-xs leading-6 text-warn">
                             <p className="font-semibold">忘记当前密码怎么办</p>
-                            <p className="mt-1 text-amber-800">
+                            <p className="mt-1 text-warn">
                                 如果还能登录，直接用左侧的「短信重置密码」——新密码会发到你手机上。
                             </p>
-                            <p className="mt-1.5 text-amber-800">
+                            <p className="mt-1.5 text-warn">
                                 如果连登录都进不去，只能在服务器上编辑{' '}
-                                <code className="rounded bg-amber-100 px-1">config.yaml</code> 的{' '}
-                                <code className="rounded bg-amber-100 px-1">Users</code> 字段重新初始化
+                                <code className="rounded bg-warn/15 px-1">config.yaml</code> 的{' '}
+                                <code className="rounded bg-warn/15 px-1">Users</code> 字段重新初始化
                                 （仅当数据库中该用户记录不存在时才会生效）。
                             </p>
                         </div>
                     </div>
                 </div>
             </div>
+            <p className="mt-6 border-t border-line-soft pt-3 font-mono text-[10.5px] tracking-wide text-fg-3">
+                UART SMS Gateway v{APP_VERSION} · {APP_REPO_URL.replace(/^https?:\/\//, '')}
+            </p>
         </div>
     );
 }

@@ -78,8 +78,8 @@ export default function ScheduledTasksConfig() {
                 return {
                     icon: Clock,
                     text: '发送中',
-                    colorClass: 'text-blue-600',
-                    bgClass: 'bg-blue-50',
+                    colorClass: 'text-brand',
+                    bgClass: 'bg-brand-soft',
                 };
         }
     };
@@ -239,7 +239,7 @@ export default function ScheduledTasksConfig() {
     if (isLoading) {
         return (
             <div className="flex justify-center items-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand"></div>
             </div>
         );
     }
@@ -248,15 +248,15 @@ export default function ScheduledTasksConfig() {
         <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex justify-between items-center pb-2">
                 <div>
-                    <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent flex items-center gap-2">
+                    <h1 className="text-2xl font-bold bg-gradient-to-r from-brand to-brand bg-clip-text text-transparent flex items-center gap-2">
                         定时任务配置
                     </h1>
-                    <p className="text-sm text-gray-500 mt-2">配置定期发送短信的任务，例如每 90
+                    <p className="text-sm text-fg-3 mt-2">配置定期发送短信的任务，例如每 90
                         天发送一次流量查询短信</p>
                 </div>
                 <Button
                     onClick={handleOpenAddDialog}
-                    className="bg-blue-600 hover:bg-blue-700 transition-colors px-5 py-2.5"
+                    className="bg-brand hover:bg-brand transition-colors px-5 py-2.5"
                 >
                     <Plus className="w-4 h-4 mr-2"/>
                     新建任务
@@ -264,33 +264,33 @@ export default function ScheduledTasksConfig() {
             </div>
 
             {tasks.length === 0 ? (
-                <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
-                    <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Clock className="w-8 h-8 text-blue-500"/>
+                <div className="text-center py-20 bg-surface rounded-md border border-line">
+                    <div className="w-16 h-16 bg-brand-soft rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Clock className="w-8 h-8 text-brand"/>
                     </div>
-                    <p className="text-gray-500 mb-2 font-medium">暂无任务</p>
-                    <p className="text-gray-400 text-sm">点击"新建任务"开始配置定时短信发送</p>
+                    <p className="text-fg-3 mb-2 font-medium">暂无任务</p>
+                    <p className="text-fg-3 text-sm">点击"新建任务"开始配置定时短信发送</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {tasks.map((task) => (
                         <Card key={task.id}
-                              className="border-gray-200 transition-all duration-200 group relative overflow-hidden">
-                            <CardHeader className="border-b border-gray-100 bg-gradient-to-br from-white to-gray-50/30">
+                              className="border-line transition-all duration-200 group relative overflow-hidden">
+                            <CardHeader className="border-b border-line-soft bg-gradient-to-br from-white to-surface/30">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-center space-x-2.5 flex-1 min-w-0">
                                         <div
-                                            className={`p-2 rounded-lg ${task.enabled ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
+                                            className={`p-2 rounded-md ${task.enabled ? 'bg-brand-soft text-brand' : 'bg-surface-2 text-fg-3'}`}>
                                             <Calendar size={18}/>
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <CardTitle className="text-base font-bold text-gray-800 truncate">
+                                            <CardTitle className="text-base font-bold text-fg truncate">
                                                 {task.name}
                                             </CardTitle>
                                             <div className="flex items-center mt-1">
                                                 <span
-                                                    className={`w-1.5 h-1.5 rounded-full mr-1.5 ${task.enabled ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`}></span>
-                                                <span className="text-xs text-gray-500 font-medium">
+                                                    className={`w-1.5 h-1.5 rounded-full mr-1.5 ${task.enabled ? 'bg-green-500 animate-pulse' : 'bg-surface-3'}`}></span>
+                                                <span className="text-xs text-fg-3 font-medium">
                           {task.enabled ? '运行中' : '已暂停'}
                         </span>
                                             </div>
@@ -302,43 +302,43 @@ export default function ScheduledTasksConfig() {
                             <CardContent className="">
                                 <div className="space-y-2 mb-3">
                                     <div
-                                        className="flex items-start space-x-2 bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                                        <Clock size={14} className="text-gray-400 mt-0.5 flex-shrink-0"/>
+                                        className="flex items-start space-x-2 bg-surface-2 p-2.5 rounded-md border border-line-soft">
+                                        <Clock size={14} className="text-fg-3 mt-0.5 flex-shrink-0"/>
                                         <div className="flex-1 min-w-0">
                                             <span
-                                                className="text-xs text-gray-400 font-medium block mb-0.5">执行间隔</span>
+                                                className="text-xs text-fg-3 font-medium block mb-0.5">执行间隔</span>
                                             <span
-                                                className="text-sm text-gray-700 font-semibold">每 {task.intervalDays} 天</span>
+                                                className="text-sm text-fg-2 font-semibold">每 {task.intervalDays} 天</span>
                                         </div>
                                     </div>
 
                                     <div
-                                        className="flex items-start space-x-2 bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                                        <Phone size={14} className="text-gray-400 mt-0.5 flex-shrink-0"/>
+                                        className="flex items-start space-x-2 bg-surface-2 p-2.5 rounded-md border border-line-soft">
+                                        <Phone size={14} className="text-fg-3 mt-0.5 flex-shrink-0"/>
                                         <div className="flex-1 min-w-0">
                                             <span
-                                                className="text-xs text-gray-400 font-medium block mb-0.5">目标号码</span>
+                                                className="text-xs text-fg-3 font-medium block mb-0.5">目标号码</span>
                                             <span
-                                                className="text-sm text-gray-700 font-mono font-semibold">{task.phoneNumber}</span>
+                                                className="text-sm text-fg-2 font-mono font-semibold">{task.phoneNumber}</span>
                                         </div>
                                     </div>
 
                                     <div
-                                        className="flex items-start space-x-2 bg-gray-50 p-2.5 rounded-lg border border-gray-100">
-                                        <MessageSquare size={14} className="text-gray-400 mt-0.5 flex-shrink-0"/>
+                                        className="flex items-start space-x-2 bg-surface-2 p-2.5 rounded-md border border-line-soft">
+                                        <MessageSquare size={14} className="text-fg-3 mt-0.5 flex-shrink-0"/>
                                         <div className="flex-1 min-w-0">
                                             <span
-                                                className="text-xs text-gray-400 font-medium block mb-0.5">短信内容</span>
-                                            <p className="text-sm text-gray-700 line-clamp-2 break-words">{task.content}</p>
+                                                className="text-xs text-fg-3 font-medium block mb-0.5">短信内容</span>
+                                            <p className="text-sm text-fg-2 line-clamp-2 break-words">{task.content}</p>
                                         </div>
                                     </div>
                                 </div>
 
                                 {task.lastRunAt > 0 && (
-                                    <div className="mb-3 pb-2.5 border-b border-gray-100 space-y-2">
+                                    <div className="mb-3 pb-2.5 border-b border-line-soft space-y-2">
                                         <div className="flex items-center text-xs">
-                                            <span className="text-gray-400">上次执行：</span>
-                                            <span className="text-gray-600 ml-1.5 font-medium">
+                                            <span className="text-fg-3">上次执行：</span>
+                                            <span className="text-fg-2 ml-1.5 font-medium">
                         {new Date(task.lastRunAt).toLocaleString('zh-CN', {
                             month: 'short',
                             day: 'numeric',
@@ -349,7 +349,7 @@ export default function ScheduledTasksConfig() {
                                         </div>
                                         {task.lastRunStatus && (
                                             <div className="flex items-center gap-1.5">
-                                                <span className="text-gray-400 text-xs">执行状态：</span>
+                                                <span className="text-fg-3 text-xs">执行状态：</span>
                                                 {(() => {
                                                     const statusInfo = getStatusDisplay(task.lastRunStatus);
                                                     const StatusIcon = statusInfo.icon;
@@ -384,7 +384,7 @@ export default function ScheduledTasksConfig() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => handleOpenEditDialog(task)}
-                                        className="flex-1 hover:bg-gray-50 hover:border-gray-300 transition-colors text-xs font-medium"
+                                        className="flex-1 hover:bg-surface-2 hover:border-line transition-colors text-xs font-medium"
                                     >
                                         <Edit className="w-3.5 h-3.5 mr-1.5"/>
                                         编辑
@@ -409,10 +409,10 @@ export default function ScheduledTasksConfig() {
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent className="sm:max-w-[500px]">
                     <DialogHeader>
-                        <DialogTitle className="text-xl font-bold text-gray-800">
+                        <DialogTitle className="text-xl font-bold text-fg">
                             {editingTask ? '编辑任务' : '新建任务'}
                         </DialogTitle>
-                        <DialogDescription className="text-sm text-gray-500">
+                        <DialogDescription className="text-sm text-fg-3">
                             {editingTask ? '修改定时任务的配置信息' : '创建新的定时短信任务，系统将按照设定的间隔自动发送'}
                         </DialogDescription>
                     </DialogHeader>
@@ -420,40 +420,40 @@ export default function ScheduledTasksConfig() {
                     <div className="space-y-5 py-2">
                         {/* 任务名称 */}
                         <div>
-                            <label className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+                            <label className="block text-xs font-semibold text-fg-2 mb-2 uppercase tracking-wide">
                                 任务名称 <span className="text-red-500">*</span>
                             </label>
                             <Input
                                 value={formData.name}
                                 onChange={(e) => updateFormField('name', e.target.value)}
                                 placeholder="例如：90天流量查询"
-                                className="bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                className="bg-surface-2 border-line focus:bg-surface focus:border-brand focus:ring-1 focus:ring-brand transition-all"
                             />
                         </div>
 
                         {/* 启用状态 */}
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3.5 flex items-center gap-3">
+                        <div className="bg-surface-2 border border-line rounded-md p-3.5 flex items-center gap-3">
                             <input
                                 type="checkbox"
                                 id="enabled"
                                 checked={formData.enabled}
                                 onChange={(e) => updateFormField('enabled', e.target.checked)}
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                                className="rounded border-line text-brand focus:ring-brand w-4 h-4 cursor-pointer"
                             />
                             <label htmlFor="enabled"
-                                   className="text-sm font-medium text-gray-700 cursor-pointer flex-1">
+                                   className="text-sm font-medium text-fg-2 cursor-pointer flex-1">
                                 启用此任务
                             </label>
                             <div
-                                className={`w-2 h-2 rounded-full ${formData.enabled ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                                className={`w-2 h-2 rounded-full ${formData.enabled ? 'bg-green-500' : 'bg-surface-3'}`}></div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
                             {/* 执行间隔天数 */}
                             <div className="col-span-2 sm:col-span-1">
                                 <label
-                                    className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide flex items-center gap-1.5">
-                                    <Clock size={12} className="text-gray-400"/>
+                                    className="block text-xs font-semibold text-fg-2 mb-2 uppercase tracking-wide flex items-center gap-1.5">
+                                    <Clock size={12} className="text-fg-3"/>
                                     执行间隔 <span className="text-red-500">*</span>
                                 </label>
                                 <div className="relative">
@@ -463,12 +463,12 @@ export default function ScheduledTasksConfig() {
                                         value={formData.intervalDays}
                                         onChange={(e) => updateFormField('intervalDays', parseInt(e.target.value) || 0)}
                                         placeholder="90"
-                                        className="bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all pr-12"
+                                        className="bg-surface-2 border-line focus:bg-surface focus:border-brand focus:ring-1 focus:ring-brand transition-all pr-12"
                                     />
                                     <span
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">天</span>
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-3 font-medium">天</span>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1.5">
+                                <p className="text-xs text-fg-3 mt-1.5">
                                     任务执行的时间间隔
                                 </p>
                             </div>
@@ -476,17 +476,17 @@ export default function ScheduledTasksConfig() {
                             {/* 目标手机号 */}
                             <div className="col-span-2 sm:col-span-1">
                                 <label
-                                    className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide flex items-center gap-1.5">
-                                    <Phone size={12} className="text-gray-400"/>
+                                    className="block text-xs font-semibold text-fg-2 mb-2 uppercase tracking-wide flex items-center gap-1.5">
+                                    <Phone size={12} className="text-fg-3"/>
                                     目标号码 <span className="text-red-500">*</span>
                                 </label>
                                 <Input
                                     value={formData.phoneNumber}
                                     onChange={(e) => updateFormField('phoneNumber', e.target.value)}
                                     placeholder="10086"
-                                    className="bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono"
+                                    className="bg-surface-2 border-line focus:bg-surface focus:border-brand focus:ring-1 focus:ring-brand transition-all font-mono"
                                 />
-                                <p className="text-xs text-gray-400 mt-1.5">
+                                <p className="text-xs text-fg-3 mt-1.5">
                                     接收短信的手机号码
                                 </p>
                             </div>
@@ -495,14 +495,14 @@ export default function ScheduledTasksConfig() {
                         {/* 发送设备 */}
                         <div>
                             <label
-                                className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide flex items-center gap-1.5">
-                                <Smartphone size={12} className="text-gray-400"/>
+                                className="block text-xs font-semibold text-fg-2 mb-2 uppercase tracking-wide flex items-center gap-1.5">
+                                <Smartphone size={12} className="text-fg-3"/>
                                 发送设备 <span className="text-red-500">*</span>
                             </label>
                             <select
                                 value={formData.deviceId}
                                 onChange={(e) => updateFormField('deviceId', e.target.value)}
-                                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition-colors focus:border-blue-500 focus:bg-white"
+                                className="h-10 w-full rounded-md border border-line bg-surface-2 px-3 text-sm outline-none transition-colors focus:border-brand focus:bg-surface"
                             >
                                 <option value="">请选择设备（必选）</option>
                                 {devices.map((d) => (
@@ -511,7 +511,7 @@ export default function ScheduledTasksConfig() {
                                     </option>
                                 ))}
                             </select>
-                            <p className="mt-1.5 text-xs leading-5 text-amber-600">
+                            <p className="mt-1.5 text-xs leading-5 text-warn">
                                 必须选择：短信只会从所选卡发出，避免误用境外漫游卡产生国际资费。
                             </p>
                         </div>
@@ -519,8 +519,8 @@ export default function ScheduledTasksConfig() {
                         {/* 短信内容 */}
                         <div>
                             <label
-                                className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide flex items-center gap-1.5">
-                                <MessageSquare size={12} className="text-gray-400"/>
+                                className="block text-xs font-semibold text-fg-2 mb-2 uppercase tracking-wide flex items-center gap-1.5">
+                                <MessageSquare size={12} className="text-fg-3"/>
                                 短信内容 <span className="text-red-500">*</span>
                             </label>
                             <textarea
@@ -528,7 +528,7 @@ export default function ScheduledTasksConfig() {
                                 onChange={(e) => updateFormField('content', e.target.value)}
                                 placeholder="例如：查询流量、CXLL 等"
                                 rows={3}
-                                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all outline-none resize-none"
+                                className="w-full bg-surface-2 border border-line rounded-md px-3 py-2.5 text-sm focus:bg-surface focus:border-brand focus:ring-1 focus:ring-brand transition-all outline-none resize-none"
                             />
                             <p className="text-xs text-red-400 mt-1.5">
                                 将要发送的短信内容，不支持 Emoji 等特殊字符。
@@ -536,7 +536,7 @@ export default function ScheduledTasksConfig() {
                         </div>
                     </div>
 
-                    <DialogFooter className="bg-gray-50 -mx-6 -mb-6 px-6 py-4 rounded-b-lg border-t border-gray-100">
+                    <DialogFooter className="bg-surface-2 -mx-6 -mb-6 px-6 py-4 rounded-b-lg border-t border-line-soft">
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -545,14 +545,14 @@ export default function ScheduledTasksConfig() {
                                 resetForm();
                             }}
                             disabled={createMutation.isPending || updateMutation.isPending}
-                            className="hover:bg-white transition-colors"
+                            className="hover:bg-surface transition-colors"
                         >
                             取消
                         </Button>
                         <Button
                             onClick={handleSubmit}
                             disabled={createMutation.isPending || updateMutation.isPending}
-                            className="bg-blue-600 hover:bg-blue-700 transition-colors min-w-[100px]"
+                            className="bg-brand hover:bg-brand transition-colors min-w-[100px]"
                         >
                             {createMutation.isPending || updateMutation.isPending
                                 ? '提交中...'

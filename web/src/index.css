@@ -13,142 +13,196 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-}
+/* ════════════════════════════════════════════════════════════════
+   Token 体系（方案 A · NOC 驾驶舱）
+   ────────────────────────────────────────────────────────────────
+   设计决定：**深色是默认值**，写在 :root 上。
+     · 理由一：next-themes 注入 class 之前有一帧空白，若 :root 是白色，
+       深色用户会看到「白闪」。把深色写进 :root，最坏情况是闪一下深色。
+     · 理由二：13 叔的使用场景是晚上/机房/手机上瞄一眼验证码，深色为主。
+   亮色由 .light 覆盖（next-themes 在 theme=light 时加这个 class）。
 
-:root {
-    --radius: 0.75rem;
-    --background: oklch(0.98 0.004 238);
-    --foreground: oklch(0.19 0.025 248);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.141 0.005 285.823);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.26 0.045 248);
-    --primary-foreground: oklch(0.985 0.004 238);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.552 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.58 0.16 255);
-    --chart-1: oklch(0.809 0.105 251.813);
-    --chart-2: oklch(0.623 0.214 259.815);
-    --chart-3: oklch(0.546 0.245 262.881);
-    --chart-4: oklch(0.488 0.243 264.376);
-    --chart-5: oklch(0.424 0.199 265.638);
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.546 0.245 262.881);
-    --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
-    --sidebar-accent: oklch(0.967 0.001 286.375);
-    --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-    --sidebar-border: oklch(0.92 0.004 286.32);
-    --sidebar-ring: oklch(0.708 0 0);
-}
+   命名约定（避开 shadcn 已占用的 --accent）：
+     canvas     页面底色        surface    卡片/面板
+     surface-2  次级面板/表头    surface-3  输入框/最深凹陷
+     rail       左侧图标栏       line       所有 1px 分隔线
+     fg/fg-2/fg-3  主文字/次文字/辅助文字
+     brand      唯一的强调色     ok/warn/err/info  4 个语义状态色
 
+   ⚠️ 铁律：新代码里**不要**再出现 bg-white / text-slate-900 / bg-blue-600
+   这类硬编码颜色。一旦硬编码，切换主题就会漏白或漏黑。
+   ════════════════════════════════════════════════════════════════ */
+
+:root,
 .dark {
-    --background: oklch(0.141 0.005 285.823);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.21 0.006 285.885);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.21 0.006 285.885);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.488 0.243 264.376);
-    --primary-foreground: oklch(0.97 0.014 254.604);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
-    --accent: oklch(0.274 0.006 286.033);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.809 0.105 251.813);
-    --chart-2: oklch(0.623 0.214 259.815);
-    --chart-3: oklch(0.546 0.245 262.881);
-    --chart-4: oklch(0.488 0.243 264.376);
-    --chart-5: oklch(0.424 0.199 265.638);
-    --sidebar: oklch(0.21 0.006 285.885);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.623 0.214 259.815);
-    --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.439 0 0);
+  color-scheme: dark;
+
+  --canvas: #12151a;
+  --surface: #1a1f26;
+  --surface-2: #151a20;
+  --surface-3: #10141a;
+  --rail: #0e1116;
+  --line: #2b323b;
+  --line-soft: rgba(43, 50, 59, 0.55);
+
+  --fg: #e8ecf1;
+  --fg-2: #8c96a3;
+  --fg-3: #5c6672;
+
+  --brand: #e9a227;
+  --brand-fg: #12151a;
+  --brand-soft: rgba(233, 162, 39, 0.12);
+
+  --ok: #3fb950;
+  --warn: #e3b341;
+  --err: #f85149;
+  --info: #6cb6ff;
+
+  --bar-idle: #2b323b;
+  --spark-on: rgba(233, 162, 39, 0.55);
+  --av: #222b36;
+
+  --radius: 5px;
+}
+
+.light {
+  color-scheme: light;
+
+  --canvas: #f1f3f5;
+  --surface: #ffffff;
+  --surface-2: #fafbfc;
+  --surface-3: #f4f6f8;
+  --rail: #e8ebef;
+  --line: #d5dbe2;
+  --line-soft: rgba(213, 219, 226, 0.85);
+
+  --fg: #12161b;
+  --fg-2: #59636f;
+  --fg-3: #6e7781;
+
+  /* 亮色下同一个琥珀色相必须压暗：原色 #e9a227 在白底只有 2.1:1 */
+  --brand: #a05e00;
+  --brand-fg: #ffffff;
+  --brand-soft: rgba(160, 94, 0, 0.1);
+
+  --ok: #1a7f37;
+  --warn: #8a5a00;
+  --err: #c0281c;
+  --info: #0b63a8;
+
+  --bar-idle: #d8dfe6;
+  --spark-on: rgba(160, 94, 0, 0.45);
+  --av: #edf1f4;
+
+  --radius: 5px;
+}
+
+@theme inline {
+  /* ── 语义 token ── */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-rail: var(--rail);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-info: var(--info);
+
+  /* ── shadcn 兼容层：radix 组件（dialog/select/switch…）靠这些变量 ── */
+  --color-background: var(--canvas);
+  --color-foreground: var(--fg);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--brand-fg);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--fg);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--fg-2);
+  --color-accent: var(--surface-2);
+  --color-accent-foreground: var(--fg);
+  --color-destructive: var(--err);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--brand);
+  --color-chart-1: #8c96a3;
+  --color-chart-2: #e9a227;
+  --color-chart-3: #3fb950;
+  --color-chart-4: #6cb6ff;
+  --color-chart-5: #f85149;
+  --color-sidebar: var(--rail);
+  --color-sidebar-foreground: var(--fg);
+  --color-sidebar-primary: var(--brand);
+  --color-sidebar-primary-foreground: var(--brand-fg);
+  --color-sidebar-accent: var(--surface-2);
+  --color-sidebar-accent-foreground: var(--fg);
+  --color-sidebar-border: var(--line);
+  --color-sidebar-ring: var(--brand);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 1px);
+  --radius-xl: calc(var(--radius) + 3px);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   html {
     min-width: 320px;
-    background: #f3f6f9;
+    /* 用变量而不是 #f3f6f9：否则深色下 html 露白边 */
+    background: var(--canvas);
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-canvas text-fg;
     min-width: 320px;
     min-height: 100vh;
     margin: 0;
-    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-family: "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei",
+      system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
+
   button,
   a {
     -webkit-tap-highlight-color: transparent;
   }
+
   ::selection {
-    color: #0b2a55;
-    background: #bfdbfe;
+    color: var(--brand-fg);
+    background: var(--brand);
   }
 }
 
 @layer utilities {
+  /* 数字/端口/时间：等宽 + 表格数字。
+     NOC 驾驶舱的核心是「读数」，字形不跳动的数字才像仪表。 */
+  .num {
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* CJK 文本不折行（中文 min-content 会塌成 1 个字，光设 width 无效） */
+  .cjk-nowrap {
+    white-space: nowrap;
+  }
+
   /* 登录页左侧视觉装饰 */
   .login-visual::before {
     content: "";
@@ -157,7 +211,7 @@
     height: 520px;
     right: -180px;
     top: -170px;
-    border: 1px solid rgb(96 165 250 / 0.1);
+    border: 1px solid var(--line);
     border-radius: 50%;
   }
 
@@ -169,15 +223,27 @@
     left: -190px;
     bottom: -240px;
     border-radius: 50%;
-    background: rgb(59 130 246 / 0.08);
+    background: var(--brand-soft);
     filter: blur(40px);
   }
 
-  /* Toast：去掉阴影、收窄圆角，贴合整体「安静」的分层风格 */
+  /* Toast：收窄圆角、去掉投影，贴合整体「用线不用影」的分层风格 */
   .app-toast {
-    border-radius: 14px !important;
-    border-color: rgb(226 232 240) !important;
+    border-radius: 6px !important;
+    border-color: var(--line) !important;
+    background: var(--surface) !important;
+    color: var(--fg) !important;
     box-shadow: none !important;
+  }
+
+  /* AT 命令输出：无论主题如何都用终端深色。
+     终端内容跟主题走会很怪 —— 亮色下白底黑字的 AT 日志像文档不像串口。 */
+  .at-console {
+    background: #0b0e12 !important;
+    color: #c8d3e0 !important;
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace !important;
+    font-variant-numeric: tabular-nums;
+    border-color: #232a33 !important;
   }
 }
 
@@ -188,7 +254,7 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: var(--line) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -199,6 +265,6 @@
 *::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: #cbd5e1;
+  background: var(--line);
   background-clip: padding-box;
 }

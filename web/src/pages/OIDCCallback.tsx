@@ -54,7 +54,7 @@ const OIDCCallback = () => {
         <div className="min-h-screen flex items-center justify-center">
             <div className="text-center">
                 <div className="text-lg mb-2">正在处理 OIDC 认证...</div>
-                <div className="text-gray-500">请稍候</div>
+                <div className="text-fg-3">请稍候</div>
             </div>
         </div>
     );
