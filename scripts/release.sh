@@ -13,6 +13,7 @@
 #   ./scripts/release.sh --version 1.4.2       # 指定版本
 #   ./scripts/release.sh --skip-deploy         # 只构建镜像，不碰线上
 #   ./scripts/release.sh --skip-publish        # 构建+部署，不推 GitHub
+#   ./scripts/release.sh --skip-binaries       # 发布，但不生成/上传二进制附件
 #   ./scripts/release.sh --dry-run             # 只打印将要做什么
 #   ./scripts/release.sh --commit "msg"        # 有未提交改动时自动提交
 #
@@ -56,6 +57,7 @@ VERSION=""
 DO_BUILD=1
 DO_DEPLOY=1
 DO_PUBLISH=1
+DO_BINARIES=1
 DRY_RUN=0
 COMMIT_MSG=""
 
@@ -68,6 +70,7 @@ while [ $# -gt 0 ]; do
         --skip-build) DO_BUILD=0; shift ;;
         --skip-deploy) DO_DEPLOY=0; shift ;;
         --skip-publish) DO_PUBLISH=0; shift ;;
+        --skip-binaries) DO_BINARIES=0; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         --commit) COMMIT_MSG="${2:?}"; shift 2 ;;
         --commit=*) COMMIT_MSG="${1#*=}"; shift ;;
@@ -324,12 +327,50 @@ else
     ok "tag 已创建"
 fi
 
-# ---------- 7. 推送 + Release ----------
+# ---------- 发布包（二进制附件） ----------
+step "生成发布包"
+DIST_DIR="dist-release"
+if [ "$DO_BINARIES" = 0 ]; then
+    info "跳过（--skip-binaries）"
+elif [ "$DO_PUBLISH" = 0 ]; then
+    info "跳过（--skip-publish）"
+elif [ "$DRY_RUN" = 1 ]; then
+    info "[dry-run] 从 $IMAGE_REPO:$VERSION 抽 /app/uart_sms_forwarder，再用 build-release.sh 打包到 $DIST_DIR/"
+else
+    # 二进制直接从已构建的镜像里抽，而不是重新交叉编译：
+    #   1) 与线上跑的可执行文件字节一致，不会出现「镜像里是 A、发布包里是 B」
+    #   2) 构建机不需要 Go 工具链（s21 实测没有 go），省掉 go mod download 那几分钟
+    # Dockerfile.multi 是裸 go build，而 internal/version 的默认值就是发行版本号，
+    # 所以抽出来的二进制自带正确版本，不需要 -ldflags 注入。
+    REMOTE_BIN="/tmp/uart_sms_forwarder-${VERSION}"
+    LOCAL_BIN="/tmp/uart_sms_forwarder-${VERSION}"
+    CID="relbin-$(printf %s "$VERSION" | tr '.' '-')"
+    remote bash -s <<EOF || die "从镜像抽取二进制失败"
+set -e
+docker rm -f '$CID' >/dev/null 2>&1 || true
+docker create --name '$CID' '$IMAGE_REPO:$VERSION' >/dev/null
+docker cp '$CID:/app/uart_sms_forwarder' '$REMOTE_BIN'
+docker rm -f '$CID' >/dev/null
+chmod +x '$REMOTE_BIN'
+EOF
+    if [ -n "$SSH_CONFIG" ]; then SCP_OPTS="-F $SSH_CONFIG"; else SCP_OPTS=""; fi
+    scp $SCP_OPTS -o BatchMode=yes -o ConnectTimeout=10 \
+        "$REMOTE_HOST:$REMOTE_BIN" "$LOCAL_BIN" || die "拉取二进制失败"
+    if BINARY="$LOCAL_BIN" ./scripts/build-release.sh "$VERSION" > /tmp/pack-${VERSION}.log 2>&1; then
+        ok "发布包：$(ls "$DIST_DIR" 2>/dev/null | tr '\n' ' ')"
+    else
+        tail -20 /tmp/pack-${VERSION}.log
+        die "打包失败（日志 /tmp/pack-${VERSION}.log）"
+    fi
+    remote "rm -f '$REMOTE_BIN'" 2>/dev/null || true
+fi
+
+# ---------- 推送 + Release ----------
 step "推送到 GitHub"
 if [ "$DO_PUBLISH" = 0 ]; then
     info "跳过（--skip-publish）"
 elif [ "$DRY_RUN" = 1 ]; then
-    info "[dry-run] git push master + $TAG，然后建 Release"
+    info "[dry-run] git push $BRANCH + $TAG，创建 Release 并上传 dist-release/ 附件"
 else
     PUSH_URL="https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
     # token 只出现在这条命令里，不写进 .git/config；输出里抹掉，避免泄漏到日志
@@ -337,36 +378,77 @@ else
     git push "$PUSH_URL" "$TAG" 2>&1 | sed "s|${GITHUB_TOKEN}|***|g" | tail -3
     ok "$BRANCH 与 $TAG 已推送"
 
-    step "创建 GitHub Release"
-    python3 - "$VERSION" "$GITHUB_REPO" <<'PY' || die "创建 Release 失败"
-import json, os, re, pathlib, sys, urllib.request, urllib.error
+    step "创建 GitHub Release 并上传附件"
+    REL_RC=0
+    GITHUB_TOKEN="$GITHUB_TOKEN" python3 - "$VERSION" "$GITHUB_REPO" <<'PY' || REL_RC=$?
+import json, os, re, pathlib, sys, urllib.request, urllib.error, urllib.parse
 ver, repo = sys.argv[1], sys.argv[2]
 token = os.environ.get("GITHUB_TOKEN", "")
+API = "https://api.github.com"
+HDR = {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
+
+def call(url, data=None, method="GET", ctype="application/json", timeout=60):
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers=dict(HDR, **{"Content-Type": ctype}))
+    return urllib.request.urlopen(req, timeout=timeout)
+
 text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
 m = re.search(r'^## \[' + re.escape(ver) + r'\].*?$\n(.*?)(?=^## \[|\Z)', text, re.M | re.S)
 body = (m.group(1).strip() if m else "")
 if not body:
-    print(f"  警告：CHANGELOG 里没有 {ver} 的正文，Release 将为空", file=sys.stderr)
+    print(f"  ⚠ CHANGELOG 里没有 {ver} 的正文，Release 正文将为空", file=sys.stderr)
+
 payload = json.dumps({
     "tag_name": f"v{ver}", "name": f"UART SMS Gateway v{ver}",
     "body": body, "draft": False, "prerelease": False,
 }).encode()
-req = urllib.request.Request(
-    f"https://api.github.com/repos/{repo}/releases", data=payload, method="POST",
-    headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json",
-             "Content-Type": "application/json"})
+
 try:
-    with urllib.request.urlopen(req, timeout=30) as r:
-        d = json.load(r)
-        print(f"  ✓ Release 已创建：{d['html_url']}")
+    with call(f"{API}/repos/{repo}/releases", payload, "POST") as r:
+        rel = json.load(r)
+    print(f"  ✓ Release 已创建：{rel['html_url']}")
 except urllib.error.HTTPError as e:
-    msg = e.read().decode()[:200]
+    msg = e.read().decode()[:300]
     if e.code == 422 and "already_exists" in msg:
-        print("  ✓ Release 已存在，跳过")
+        # 已存在时不能直接 return：附件还得传，必须先把 upload_url 取回来
+        with call(f"{API}/repos/{repo}/releases/tags/v{ver}") as r:
+            rel = json.load(r)
+        print(f"  ✓ Release 已存在，沿用：{rel['html_url']}")
     else:
-        print(f"  ✗ HTTP {e.code}: {msg}", file=sys.stderr)
+        print(f"  ✗ 创建 Release 失败 HTTP {e.code}: {msg}", file=sys.stderr)
         sys.exit(1)
+
+d = pathlib.Path("dist-release")
+files = sorted((x for x in d.glob("*") if x.is_file()), key=lambda x: x.name) if d.is_dir() else []
+if not files:
+    print("  · dist-release/ 为空，没有附件要传")
+upload = rel["upload_url"].split("{")[0]
+failed = []
+for f in files:
+    try:
+        with call(f"{upload}?name={urllib.parse.quote(f.name)}",
+                  f.read_bytes(), "POST", "application/octet-stream", 300) as r:
+            a = json.load(r)
+        print(f"  ✓ 附件 {f.name}（{a['size'] / 1048576:.1f} MB）")
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode()[:200]
+        if e.code == 422 and "already_exists" in msg:
+            print(f"  · 附件 {f.name} 已存在，跳过")
+        else:
+            failed.append(f.name)
+            print(f"  ✗ 附件 {f.name} HTTP {e.code}: {msg}", file=sys.stderr)
+    except Exception as e:
+        failed.append(f.name)
+        print(f"  ✗ 附件 {f.name}: {e}", file=sys.stderr)
+
+if failed:
+    sys.exit(2)
 PY
+    if [ "$REL_RC" = 2 ]; then
+        warn "Release 正文已发布，但有附件上传失败（见上）—— 可到网页手工补传"
+    elif [ "$REL_RC" != 0 ]; then
+        die "创建 Release 失败（退出码 $REL_RC）"
+    fi
 fi
 
 # ---------- 收尾 ----------

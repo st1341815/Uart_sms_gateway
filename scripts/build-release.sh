@@ -32,7 +32,7 @@ OUT="$ROOT/dist-release"
 rm -rf "$OUT"
 mkdir -p "$OUT" bin
 
-if [ ! -f web/embed_dir/index.html ]; then
+if [ -z "${BINARY:-}" ] && [ ! -f web/embed_dir/index.html ]; then
     echo "⚠️  web/embed_dir 不存在，打包出来的二进制只有占位页（后端 API 仍可用）" >&2
 fi
 
@@ -110,7 +110,19 @@ EOF
 # 其余产物从来没人下过，却让每次发版多花 5 次交叉编译的时间。
 # 恢复多平台只需把下面被注释掉的行放回来 —— build_one / pack_tar / pack_zip
 # 三个函数本身是通用的，没有硬编码任何单一平台。
-build_one linux  amd64 ""   linux-amd64
+if [ -n "${BINARY:-}" ]; then
+    # 用现成二进制打包（例如从已构建的容器镜像 docker cp 出来的那份）：
+    #   - 保证发布包与线上镜像里的可执行文件字节一致，不会出现「镜像里是 A、
+    #     发布包里是另一次编译的 B」
+    #   - 调用方机器不需要 Go 工具链（部署机 s21 就没装 go，本地也没有）
+    [ -f "$BINARY" ] || { echo "✗ BINARY 指向的文件不存在：$BINARY" >&2; exit 1; }
+    mkdir -p bin
+    cp "$BINARY" bin/uart_sms_forwarder-linux-amd64
+    chmod +x bin/uart_sms_forwarder-linux-amd64
+    echo "→ 使用现成二进制：$BINARY"
+else
+    build_one linux  amd64 ""   linux-amd64
+fi
 # build_one linux  arm64 ""   linux-arm64
 # build_one linux  arm   7    linux-armv7
 # build_one windows amd64 ""  windows-amd64
