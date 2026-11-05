@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
     Clock3,
@@ -160,6 +160,30 @@ export default function Layout() {
     };
 
     const username = (typeof localStorage !== 'undefined' && localStorage.getItem('username')) || 'U';
+
+    // 头像菜单：点击外部或 Esc 关闭。
+    // 之前这个头像是个裸 div，点它没反应，而真正的「退出登录」埋在侧边栏抽屉里，
+    // 移动端要开抽屉才够得着 —— 现在收敛成一个符合直觉的落点。
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const userMenuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!userMenuOpen) return;
+        const onPointerDown = (event: PointerEvent) => {
+            if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+                setUserMenuOpen(false);
+            }
+        };
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setUserMenuOpen(false);
+        };
+        document.addEventListener('pointerdown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', onPointerDown);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [userMenuOpen]);
 
     const drawer = (
         <div className="flex h-full flex-col bg-rail">
@@ -345,8 +369,58 @@ export default function Layout() {
                                 发送短信
                             </Link>
 
-                            <div className="flex size-8 items-center justify-center rounded-full border border-line bg-surface-2 text-[11px] font-bold text-fg-2">
-                                {username.slice(0, 1).toUpperCase()}
+                            <div className="relative" ref={userMenuRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setUserMenuOpen((open) => !open)}
+                                    aria-haspopup="menu"
+                                    aria-expanded={userMenuOpen}
+                                    aria-label={`账号菜单：${username}`}
+                                    title={`${username} · 账号`}
+                                    className={cn(
+                                        'flex size-8 items-center justify-center rounded-full border text-[11px] font-bold transition-colors',
+                                        userMenuOpen
+                                            ? 'border-brand/60 bg-brand-soft text-brand'
+                                            : 'border-line bg-surface-2 text-fg-2 hover:border-brand/40 hover:text-brand',
+                                    )}
+                                >
+                                    {username.slice(0, 1).toUpperCase()}
+                                </button>
+
+                                {userMenuOpen && (
+                                    <div
+                                        role="menu"
+                                        className="absolute right-0 top-[calc(100%+8px)] z-50 w-44 overflow-hidden rounded-md border border-line bg-surface shadow-xl"
+                                    >
+                                        <div className="border-b border-line-soft px-3 py-2">
+                                            <p className="text-[10px] uppercase tracking-[0.12em] text-fg-3">当前账号</p>
+                                            <p className="cjk-nowrap mt-0.5 truncate text-[13px] font-semibold text-fg">
+                                                {username}
+                                            </p>
+                                        </div>
+                                        <Link
+                                            to={accountNav.href}
+                                            role="menuitem"
+                                            onClick={() => setUserMenuOpen(false)}
+                                            className="flex items-center gap-2 px-3 py-2 text-xs text-fg-2 transition-colors hover:bg-surface-2 hover:text-fg"
+                                        >
+                                            <Settings className="size-3.5"/>
+                                            账号安全
+                                        </Link>
+                                        <button
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => {
+                                                setUserMenuOpen(false);
+                                                handleLogout();
+                                            }}
+                                            className="flex w-full items-center gap-2 border-t border-line-soft px-3 py-2 text-xs text-fg-2 transition-colors hover:bg-err/10 hover:text-err"
+                                        >
+                                            <LogOut className="size-3.5"/>
+                                            退出登录
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

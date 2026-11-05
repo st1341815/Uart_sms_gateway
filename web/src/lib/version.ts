@@ -8,7 +8,7 @@
 //
 // 发版时同步改这里（vite 会把它打进 bundle，构建产物哈希随之变化，
 // 天然带着版本可追溯）。
-export const APP_VERSION = '1.2.1';
+export const APP_VERSION = '1.2.2';
 
 // 项目主页 / 源码仓库（侧边栏版本号指向这里）
 export const APP_REPO_URL = 'https://github.com/st1341815/Uart_sms_gateway';
