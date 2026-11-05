@@ -65,6 +65,11 @@ function StatusBadge({status}: {status: TextMessage['status']}) {
             return <span className="font-semibold text-err">✗ 失败</span>;
         case 'sending':
             return <span className="font-semibold text-fg-3">发送中…</span>;
+        case 'pending':
+            // SIM 不在线时提交的短信会进补发队列，等卡恢复后自动重试
+            return <span className="font-semibold text-warn">⏳ 待补发</span>;
+        case 'unknown':
+            return <span className="font-semibold text-warn">? 结果未知</span>;
         default:
             return null;
     }

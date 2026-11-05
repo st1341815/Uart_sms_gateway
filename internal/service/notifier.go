@@ -59,10 +59,15 @@ func (m NotificationMessage) String() string {
 			deviceInfo,
 			timestamp.Format(time.DateTime),
 		)
-	case "sim_online", "sim_offline":
+	case "sim_online", "sim_offline", "sim_status_report":
 		title := "SIM 卡上线"
-		if m.Type == "sim_offline" {
+		switch m.Type {
+		case "sim_offline":
 			title = "SIM 卡掉线"
+		case "sim_status_report":
+			// 掉线后迟迟等不到上线通知时的强制状态上报，
+			// 报的是「此刻到底怎么样」，不是「当初掉了」。
+			title = "SIM 卡状态上报"
 		}
 		return fmt.Sprintf(`%s
 ----

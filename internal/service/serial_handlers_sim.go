@@ -43,6 +43,12 @@ func (s *SerialService) checkSimStatusChange(st *StatusData) {
 		return
 	}
 
+	// 卡恢复在线：离线期间排队的短信可以补发了。
+	// 异步执行，不阻塞状态帧处理——补发要逐条写串口，耗时可到分钟级。
+	if online {
+		go s.flushPendingMessages("sim_online")
+	}
+
 	s.notifySimStatus(online, st)
 }
 
@@ -106,6 +112,19 @@ func (s *SerialService) notifySimStatus(online bool, st *StatusData) {
 		zap.String("device_id", s.deviceID),
 		zap.Bool("online", online),
 		zap.String("phone", phone))
+
+	// 维护「掉线悬空事件」的计时：
+	//   掉线通知送达 -> 开始计时，65 分钟内若没有上线通知送达，强制补报一次真实状态；
+	//   上线通知送达 -> 这次中断已经成对闭环，撤销兜底计时。
+	// 注意这里只能以「已送达通知渠道」为准 —— sendNotificationMessage 不返回成败，
+	// 各渠道的发送结果是它自己记日志的，这里拿不到更细的粒度。
+	if online {
+		s.offlineNotifySince.Store(0)
+		s.offlineFallbackFired.Store(false)
+	} else {
+		s.offlineNotifySince.Store(now.Unix())
+		s.offlineFallbackFired.Store(false)
+	}
 }
 
 // describeSimStatus 生成通知正文里的卡信息。

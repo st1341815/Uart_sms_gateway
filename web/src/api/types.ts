@@ -5,7 +5,7 @@ export interface TextMessage {
     to: string;
     content: string;
     type: 'incoming' | 'outgoing';
-    status: 'received' | 'sending' | 'sent' | 'failed';
+    status: 'received' | 'sending' | 'sent' | 'failed' | 'pending' | 'unknown';
     /** 收发该消息的设备 ID（sms1/sms2...）。历史数据（字段引入前）为 undefined */
     deviceId?: string;
     timestamp: number;

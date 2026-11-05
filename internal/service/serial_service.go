@@ -74,6 +74,16 @@ type SerialService struct {
 	// 同方向的抖动仍被抑制，反方向的成对事件不再互相干扰。
 	lastOnlineNotifyAt  atomic.Int64
 	lastOfflineNotifyAt atomic.Int64
+
+	// offlineNotifySince 掉线通知真正送达用户的时刻（Unix 秒）；
+	// 0 表示当前没有「发了掉线但还没等到上线」的悬空事件。
+	// 由 checkOfflineFallback 依据它判断是否到了强制补报的点。
+	offlineNotifySince atomic.Int64
+	// offlineFallbackFired 本轮掉线是否已经补报过（一次中断只报一次）。
+	offlineFallbackFired atomic.Bool
+	// supervisorOnce 保证后台巡检 goroutine 每个设备只起一次
+	// （Start() 在串口断开会反复循环，不能每次都 go 一个）。
+	supervisorOnce sync.Once
 }
 
 // NewSerialService 创建串口服务实例（兼容旧模式）
@@ -137,6 +147,9 @@ func (s *SerialService) GetDeviceConfig() config.DeviceConfig {
 
 // Start 启动串口服务（使用 backoff 重连机制）
 func (s *SerialService) Start() {
+	// 补发队列巡检 + 掉线兜底上报（每台设备只起一次，
+	// Start 因串口断开会被反复回到这里）。
+	s.startPendingSupervisor()
 
 	// 启动主循环
 	b := &backoff.Backoff{
@@ -458,6 +471,10 @@ func (s *SerialService) SendSMS(to, content string) (string, error) {
 	s.smsSendMu.Lock()
 	defer s.smsSendMu.Unlock()
 
+	// 先判断当前能不能发：串口连着、没开飞行模式、卡已注册，三个都满足才算。
+	// 不拿信号强度做门槛——信号弱不等于发不出去，判了会误伤。
+	sendable, notSendableReason := s.canSendNow()
+
 	// 先保存发送记录，状态为 "sending"
 	ctx := context.Background()
 	msgID := uuid.NewString()
@@ -471,10 +488,28 @@ func (s *SerialService) SendSMS(to, content string) (string, error) {
 		DeviceID:  s.deviceID,                  // 记录发送设备，多卡场景可追溯
 		CreatedAt: time.Now().UnixMilli(),
 	}
+	if !sendable {
+		// 卡不在线：不判失败，入库排队等卡恢复后补发。
+		// 直接失败会让「离线期间的告警短信」全部石沉大海——恰恰是最需要送达的内容。
+		msg.Status = models.MessageStatusPending
+		msg.RetryUntil = time.Now().Add(pendingRetryWindow).UnixMilli()
+	}
 
 	if err := s.textMsgService.Save(ctx, msg); err != nil {
 		s.logger.Error("保存短信发送记录失败", zap.Error(err))
 		return "", err
+	}
+
+	if !sendable {
+		s.logger.Info("SIM 当前不可发送，短信已排队等待补发",
+			zap.String("device_id", s.deviceID),
+			zap.String("to", to),
+			zap.String("request_id", msgID),
+			zap.String("reason", notSendableReason),
+			zap.Time("retry_until", time.UnixMilli(msg.RetryUntil)))
+		// 返回 nil 表示「已受理」：调用方不该因为卡暂时离线就当成发送失败，
+		// 短信会在补发有效期内的任意时刻真正发出。
+		return msgID, nil
 	}
 
 	// 发送命令，使用消息 ID 作为 request_id
