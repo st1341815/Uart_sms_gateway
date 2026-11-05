@@ -21,6 +21,29 @@
 
 ---
 
+## [1.2.4] — 2026-11-05
+
+**概览页手机端横向溢出的真正根因**：裸 `grid` 的隐式 track 宽度是 `auto`。
+
+- `fix`（根因）`Dashboard.tsx` 双栏容器的 className 是
+  `grid ... lg:grid-cols-[minmax(0,1fr)_380px]` —— **只在 `lg` 断点声明了列模板**。
+  `<1024px` 时它是一个没有 `grid-template-columns` 的裸 `grid`，退化成
+  **隐式单列、track 宽度 `auto`**，而 `auto` 由内容 max-content 决定，不会被压缩。
+  `min-w-0` 只能约束容器自身，管不到 track 的 `auto` 尺寸 —— 所以之前几轮
+  加 `min-w-0`、改 `minmax(0,1fr)`（都只写在 `lg` 里）全部无效。
+  实测该容器在 390px 视口下被撑到 **852px**，`scrollWidth` 达 864。
+- `fix` 补上 `grid-cols-1`（Tailwind 展开为 `repeat(1, minmax(0,1fr))`），
+  track 才真正可收缩。修复后 390px 下 `scrollWidth` 由 864 → 390。
+- `docs` 在该元素上方留了注释，说明「裸 grid 必须显式写 grid-cols-1」，
+  避免以后有人把 `grid-cols-1` 当成冗余删掉。
+
+> 为什么只有概览页出问题：其他页面根容器用的是 `flex`，flex 子项可被 `min-w-0`
+> 收缩；只有概览页在手机断点用了裸 `grid`。
+
+验证：CDP 设备模拟 320 / 360 / 390 / 414 / 430px 五档，注入长设备名 /
+长运营商 / `+86` 号码 / 超长短信内容等极端数据后，
+`scrollWidth` 全部等于视口宽，溢出元素 0 个。
+
 ## [1.2.3] — 2026-11-05
 
 手机端概览页不再溢出：去掉两处硬约束，设备矩阵在窄屏改为卡片式。

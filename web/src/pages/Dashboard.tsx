@@ -275,7 +275,10 @@ export default function Dashboard() {
                 }
             />
 
-            <div className="mt-4 grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_380px]">
+            {/* ⚠️ 必须显式写 grid-cols-1：裸 grid 的隐式单列 track 宽度是 auto，
+                由内容 max-content 决定，窄屏会被撑到几百 px 而无法收缩（min-w-0 管不到 track）。
+                Tailwind 的 grid-cols-1 展开成 repeat(1, minmax(0,1fr))，才真正能压住。 */}
+            <div className="mt-4 grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_380px]">
                 {/* ── 左：设备矩阵 + 下方面板 ── */}
                 <div className="flex min-h-0 min-w-0 flex-col gap-3">
                     <section className="flex min-h-0 flex-col">
