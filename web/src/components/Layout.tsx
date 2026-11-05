@@ -127,6 +127,10 @@ export default function Layout() {
     );
 
     const leadDevice = onlineDevices[0];
+
+    // CSQ(0-31) → dBm：3GPP 27.007 经验换算，比直接当 dBm 显示少一个数量级误差
+
+    const leadDbm = leadDevice ? -113 + 2 * (leadDevice.signal ?? 99) : 0;
     const leadSignal = leadDevice ? signalPercent(leadDevice.signal) : 0;
     // 异常 = 离线设备 + 在线但信号 <10/31 的设备
     const abnormalCount = devices.filter(
@@ -309,10 +313,10 @@ export default function Layout() {
                             <div className="hidden items-baseline gap-1.5 border-l border-line pl-4 pr-5 md:flex">
                                 <span className="text-[11px] tracking-[0.08em] text-fg-2">主卡</span>
                                 <span className="num text-xl font-semibold text-fg">
-                                    {leadDevice ? `−${Math.abs(leadDevice.signal ?? 92)}` : '—'}
+                                    {leadDevice ? `−${leadDbm}` : '—'}
                                 </span>
                                 <span className="num text-xs text-fg-2">
-                                    {leadDevice ? `dBm · ${leadDevice.signal ?? '—'}/31 · ${leadSignal}%` : '等待设备'}
+                                    {leadDevice ? `dBm · CSQ ${leadDevice.signal ?? '—'}/31 · ${leadSignal}%` : '等待设备'}
                                 </span>
                             </div>
 
