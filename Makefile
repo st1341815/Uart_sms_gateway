@@ -1,4 +1,4 @@
-.PHONY: version check-version bump-version build-web prepare-embed build-server build-servers build-linux build-release clean dev run
+.PHONY: version check-version bump-version build-web prepare-embed build-server build-servers build-linux build-release clean dev run release release-dry
 
 # 变量定义
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -111,6 +111,15 @@ build-release:
 	make build-web
 	make build-server
 	@echo "Release build completed!"
+
+# 标准发版：构建前端 → 远程构建镜像 → 部署 → 健康验证 → 打 tag → 推送 → GitHub Release
+# 全流程细节与可覆盖的环境变量见 scripts/release.sh 头部注释
+release:
+	@./scripts/release.sh
+
+# 空跑：只走检查与打印，不构建、不部署、不推送
+release-dry:
+	@./scripts/release.sh --dry-run
 
 # 清理构建文件
 clean:
