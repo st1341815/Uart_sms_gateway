@@ -75,7 +75,7 @@ function DeviceRow({
     return (
         <div
             className={cn(
-                'grid h-[52px] grid-cols-[20px_1fr_62px] items-center gap-3 border-b border-line-soft px-3 last:border-b-0 sm:grid-cols-[24px_88px_1fr_112px_120px_78px_84px] sm:px-3.5',
+                'grid h-[52px] grid-cols-[16px_minmax(0,1fr)_64px] items-center gap-2.5 border-b border-line-soft px-3 last:border-b-0 sm:grid-cols-[20px_minmax(64px,0.75fr)_minmax(0,1.6fr)_minmax(76px,1fr)_minmax(96px,1.1fr)_minmax(58px,0.7fr)_minmax(64px,0.8fr)] sm:gap-3 sm:px-3.5',
                 offline && 'opacity-70',
             )}
         >
@@ -87,7 +87,9 @@ function DeviceRow({
                 title={offline ? '离线' : percent >= 40 ? '在线' : '信号弱'}
             />
 
-            <span className="num hidden text-[11.5px] text-fg-2 sm:block">{device.port || device.id}</span>
+            <span className="num hidden min-w-0 truncate whitespace-nowrap text-[11.5px] text-fg-2 sm:block" title={device.port || device.id}>
+                {device.port || device.id}
+            </span>
 
             <div className="min-w-0">
                 <div className="flex items-baseline gap-1.5">
@@ -101,11 +103,11 @@ function DeviceRow({
                 </div>
             </div>
 
-            <span className="hidden text-xs text-fg-2 sm:block">
+            <span className="hidden whitespace-nowrap text-xs text-fg-2 sm:block">
                 {offline ? '—' : device.operator || '未知运营商'}
             </span>
 
-            <span className={cn('num hidden text-[12.5px] tracking-tight sm:block', offline ? 'text-fg-3' : 'text-fg')}>
+            <span className={cn('num hidden whitespace-nowrap text-[12.5px] tracking-tight sm:block', offline ? 'text-fg-3' : 'text-fg')}>
                 {device.phoneNumber || '未补录'}
             </span>
 
@@ -241,7 +243,7 @@ export default function Dashboard() {
                 }
             />
 
-            <div className="mt-4 grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="mt-4 grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_380px]">
                 {/* ── 左：设备矩阵 + 下方面板 ── */}
                 <div className="flex min-h-0 min-w-0 flex-col gap-3">
                     <section className="flex min-h-0 flex-col">
@@ -260,7 +262,7 @@ export default function Dashboard() {
                         </div>
 
                         <div className="overflow-hidden rounded-md border border-line bg-surface-2">
-                            <div className="hidden h-8 grid-cols-[24px_88px_1fr_112px_120px_78px_84px] items-center gap-3 border-b border-line bg-surface-3 px-3.5 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-fg-3 sm:grid">
+                            <div className="hidden h-8 grid-cols-[20px_minmax(64px,0.75fr)_minmax(0,1.6fr)_minmax(76px,1fr)_minmax(96px,1.1fr)_minmax(58px,0.7fr)_minmax(64px,0.8fr)] items-center gap-3 border-b border-line bg-surface-3 px-3.5 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-fg-3 sm:grid">
                                 <span/>
                                 <span>串口</span>
                                 <span>设备</span>
@@ -416,7 +418,7 @@ export default function Dashboard() {
                             <span className="text-[10.5px] text-fg-3">必须选卡</span>
                         </div>
 
-                        <div className="grid grid-cols-[1fr_96px] gap-2">
+                        <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-2">
                             <label className="flex h-8 items-center gap-1.5 rounded-[4px] border border-line bg-surface-3 px-2">
                                 <span className="text-[10.5px] text-fg-3">发送自</span>
                                 <select
