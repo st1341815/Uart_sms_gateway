@@ -345,12 +345,17 @@ GITHUB_TOKEN=ghp_xxx make release
 | `REMOTE_DIR` | `/home/unit3/sms-multi` | 线上部署目录 |
 | `CONTAINER` | `sms-multi` | 容器名 |
 | `IMAGE_REPO` | `smstext-multi-device` | 镜像仓库名 |
-| `HEALTH_URL` | `http://$REMOTE_HOST:8080/health` | 健康检查地址 |
+| `HEALTH_URL` | 自动解析（`ssh -G` 取真实 IP） | 健康检查地址，见下方踩坑注记 |
 
 > **本机踩坑：OpenSSH 不读 `$HOME/.ssh/config`。** 它按 passwd 里记录的 home 找配置，
 > 而本机 `HOME` 已被 Octop 挪到 `/vol1/@appshare/octop-native/data`，
 > 于是 `ssh s21` 直接报 `Could not resolve hostname`。脚本因此默认加 `-F $HOME/.ssh/config`
 > 兜底；`git push` 走 `https + token`，不受影响。
+
+> **踩坑：健康检查不要直接用 `REMOTE_HOST`。** `s21` 这类 ssh 别名在 HTTP 里解析不了，
+> `curl` 直接返回 `exit=6`，于是 20 次轮询全部落空——一次成功的部署被误判成失败并回滚
+> （2026-11-06 真实踩过一次，白回滚一版）。脚本现在用 `ssh -G` 把别名还原成真实地址
+> 再拼 `HEALTH_URL`；手工指定时也要填 IP，别填别名。
 
 > **防呆：** 工作区不干净会直接拒绝发版——否则 tag 指向的 commit 和实际构建的源码对不上，
 > 事后回溯版本会完全错乱。急用时用 `--commit "说明"` 让脚本代提交。
