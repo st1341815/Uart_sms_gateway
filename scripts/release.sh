@@ -29,7 +29,9 @@
 #   CONTAINER       默认 sms-multi         容器名
 #   IMAGE_REPO      默认 smstext-multi-device    镜像仓库名
 #   GITHUB_REPO     默认 st1341815/Uart_sms_gateway
-#   HEALTH_URL      默认 http://<REMOTE_HOST>:8080/health
+#   HEALTH_URL      默认 http://<REMOTE_HOST>:8080/health（自动解析成真实 IP）
+#   PUSH_MODE       默认 auto              推送方式：auto/ssh/https
+#                                          auto = remote 是 ssh:// 且配置了 SSH_CONFIG 就用 ssh
 #
 set -euo pipefail
 
@@ -47,6 +49,7 @@ CONTAINER="${CONTAINER:-sms-multi}"
 IMAGE_REPO="${IMAGE_REPO:-smstext-multi-device}"
 GITHUB_REPO="${GITHUB_REPO:-st1341815/Uart_sms_gateway}"
 HEALTH_URL="${HEALTH_URL:-}"
+PUSH_MODE="${PUSH_MODE:-auto}"
 BUILD_ARG_WEB_PREBUILT=1
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -403,10 +406,32 @@ if [ "$DO_PUBLISH" = 0 ]; then
 elif [ "$DRY_RUN" = 1 ]; then
     info "[dry-run] git push $BRANCH + $TAG，创建 Release 并上传 dist-release/ 附件"
 else
-    PUSH_URL="https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
-    # token 只出现在这条命令里，不写进 .git/config；输出里抹掉，避免泄漏到日志
-    git push "$PUSH_URL" "$BRANCH" 2>&1 | sed "s|${GITHUB_TOKEN}|***|g" | tail -3
-    git push "$PUSH_URL" "$TAG" 2>&1 | sed "s|${GITHUB_TOKEN}|***|g" | tail -3
+    # 推送方式：auto 时优先 SSH。
+    # 起因：本机 git 2.39.5 走 https 推 github 会 `GnuTLS recv error (-110)` 断连
+    # （ls-remote 也一样挂），而同一网络的 SSH 通路稳定 —— 别在这上面反复重试 https。
+    if [ "$PUSH_MODE" = "auto" ]; then
+        case "$(git remote get-url origin 2>/dev/null || echo '')" in
+            ssh://*|git@*)
+                if [ -n "$SSH_CONFIG" ]; then PUSH_MODE=ssh; else PUSH_MODE=https; fi ;;
+            *) PUSH_MODE=https ;;
+        esac
+    fi
+
+    if [ "$PUSH_MODE" = "ssh" ]; then
+        info "推送方式：ssh（$REMOTE_HOST 同源配置）"
+        GIT_SSH_COMMAND="ssh -F $SSH_CONFIG -o StrictHostKeyChecking=accept-new" \
+            git push origin "$BRANCH" 2>&1 | tail -3 || die "git push $BRANCH 失败（ssh）"
+        GIT_SSH_COMMAND="ssh -F $SSH_CONFIG -o StrictHostKeyChecking=accept-new" \
+            git push origin "$TAG" 2>&1 | tail -3 || die "git push $TAG 失败（ssh）"
+    else
+        info "推送方式：https + token"
+        PUSH_URL="https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+        # token 只出现在这条命令里，不写进 .git/config；输出里抹掉，避免泄漏到日志
+        git push "$PUSH_URL" "$BRANCH" 2>&1 | sed "s|${GITHUB_TOKEN}|***|g" | tail -3 \
+            || die "git push $BRANCH 失败（https，可试 PUSH_MODE=ssh）"
+        git push "$PUSH_URL" "$TAG" 2>&1 | sed "s|${GITHUB_TOKEN}|***|g" | tail -3 \
+            || die "git push $TAG 失败（https，可试 PUSH_MODE=ssh）"
+    fi
     ok "$BRANCH 与 $TAG 已推送"
 
     step "创建 GitHub Release 并上传附件"
