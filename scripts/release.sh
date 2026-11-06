@@ -155,7 +155,19 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 ok "工作区干净（HEAD $(git rev-parse --short HEAD)）"
 
-[ -n "$HEALTH_URL" ] || HEALTH_URL="http://${REMOTE_HOST%%@*}:8080/health"
+# 健康检查地址必须用**能解析**的主机名。
+# REMOTE_HOST 通常是 ssh 别名（s21），curl 解析不了它，于是 20 次轮询全部落空，
+# 一次成功的部署被误判成失败、白白回滚 —— 2026-11-06 真实踩过。
+# ssh -G 能把别名还原成真实地址（s21 → 192.168.11.21）。
+if [ -z "$HEALTH_URL" ]; then
+    if [ -n "$SSH_CONFIG" ]; then
+        _HOST_ADDR=$(ssh -F "$SSH_CONFIG" -G "$REMOTE_HOST" 2>/dev/null | awk '$1=="hostname"{print $2; exit}' || true)
+    else
+        _HOST_ADDR=$(ssh -G "$REMOTE_HOST" 2>/dev/null | awk '$1=="hostname"{print $2; exit}' || true)
+    fi
+    [ -n "${_HOST_ADDR:-}" ] || _HOST_ADDR="${REMOTE_HOST%%@*}"
+    HEALTH_URL="http://${_HOST_ADDR}:8080/health"
+fi
 
 if [ "$DO_PUBLISH" = 1 ] && [ "$DRY_RUN" = 0 ]; then
     if [ -z "${GITHUB_TOKEN:-}" ]; then
@@ -174,9 +186,18 @@ else
     run "make prepare-embed" >/dev/null || die "同步 web/dist → web/embed_dir 失败"
     [ -f web/embed_dir/index.html ] || die "web/embed_dir/index.html 不存在（前端产物没同步进去）"
     ok "前端产物已嵌入（耗时 $(elapsed "$T0")）"
-    # 前端产物是构建输入，必须进 commit，否则别人拉下来构建会用到旧页面
+    # 前端产物必须进 commit：tag 指向的 commit 得能重建出同样的页面。
+    # 版本号一变 bundle 哈希就变，所以这个目录每次发版必然脏 —— 在这里自动提交，
+    # 而不是只 warn（只提示的话，tag 会指向没有新页面的 commit）。
     if [ -n "$(git status --porcelain web/embed_dir)" ]; then
-        warn "web/embed_dir 有变化但未提交 —— 发布前请一并提交（或让它进 .gitignore）"
+        if [ "$DRY_RUN" = 1 ]; then
+            info "[dry-run] git add web/embed_dir && git commit -m 'build(web): 更新 $VERSION 前端产物'"
+        else
+            git add web/embed_dir || die "暂存前端产物失败"
+            git commit -q -m "build(web): 更新 $VERSION 前端产物" \
+                || die "提交前端产物失败（检查 git user.name / user.email）"
+            ok "前端产物已提交（HEAD $(git rev-parse --short HEAD)）"
+        fi
     fi
 fi
 
@@ -281,7 +302,11 @@ else
         fi
     done
     if [ "$HEALTHY" != 1 ]; then
-        warn "健康检查未通过"
+        warn "健康检查未通过（探测地址 $HEALTH_URL）"
+        # 先取证再回滚：不然「为什么失败」这个最关键的信息随着容器被重建一起蒸发
+        info "容器状态：$(remote "docker inspect $CONTAINER --format '{{.State.Status}} restarts={{.RestartCount}}'" 2>/dev/null || echo 未知)"
+        info "最近 25 行日志："
+        remote "docker logs --tail 25 $CONTAINER" 2>&1 | sed 's/^/      /' || true
         if [ -n "${PREV_TAG:-}" ]; then
             warn "回滚到 $PREV_TAG"
             remote bash -s <<EOF || true
@@ -290,7 +315,13 @@ cd '$REMOTE_DIR'
 sed -i -E "s|^([[:space:]]*image:[[:space:]]*).*|\1$IMAGE_REPO:${PREV_TAG}|" docker-compose.yml
 docker compose up -d
 EOF
-            die "部署后健康检查失败，已回滚到 $PREV_TAG"
+            # 回滚同样要验证：改回 compose 不等于服务真的起来了
+            sleep 4
+            _RB=$(curl -s -m 5 "$HEALTH_URL" 2>/dev/null || true)
+            if printf '%s' "$_RB" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                die "新版本健康检查失败，已回滚到 $PREV_TAG（回滚后服务正常）"
+            fi
+            die "回滚到 $PREV_TAG 后仍不健康，请立刻人工介入：$REMOTE_DIR"
         fi
         # 拿不到上一版镜像时绝不能瞎 sed —— 那会把 image 行写成空 tag，
         # 下一轮 compose up 直接拉不到镜像，故障从「服务不健康」升级成「起不来」
