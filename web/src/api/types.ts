@@ -94,6 +94,8 @@ export interface DeviceStatusSummary {
     operator?: string;
     phoneNumber?: string;
     signal?: number;
+    /** 参考信号接收功率 (dBm，-140 ~ -44)。4G 下比 CSQ 更能反映真实信号质量；未上报时缺省 */
+    rsrp?: number;
     isRoaming?: boolean;
 }
 

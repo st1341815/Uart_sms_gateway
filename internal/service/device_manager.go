@@ -77,8 +77,11 @@ type DeviceStatus struct {
 	IMSI        string `json:"imsi,omitempty"`
 	Operator    string `json:"operator,omitempty"`
 	PhoneNumber string `json:"phone_number,omitempty"`
-	Signal      int    `json:"signal,omitempty"`
-	IsRoaming   bool   `json:"is_roaming,omitempty"`
+	Signal      int    `json:"signal,omitempty"` // CSQ (0-31)，99=未知
+	// Rsrp 参考信号接收功率 (dBm，-44 ~ -140)，4G 下比 CSQ 更能反映真实信号质量。
+	// 取不到（模组未上报/为默认值 -140 或 0）时省略，前端回退到 CSQ 换算。
+	Rsrp      int  `json:"rsrp,omitempty"`
+	IsRoaming bool `json:"is_roaming,omitempty"`
 }
 
 // NewDeviceManager 创建设备管理器
@@ -505,6 +508,7 @@ func (dm *DeviceManager) GetAllStatus() []*DeviceStatus {
 			// SIM 卡不写 MSISDN 时（境外/漫游卡常见）回退到手工补录的号码
 			ds.PhoneNumber = dm.displayPhoneNumber(id, status.Mobile.Number)
 			ds.Signal = status.Mobile.SignalLevel
+			ds.Rsrp = normalizeRsrp(status.Mobile.Rsrp)
 			ds.IsRoaming = status.Mobile.IsRoaming
 		}
 
@@ -541,10 +545,22 @@ func (dm *DeviceManager) GetDeviceStatus(id string) (*DeviceStatus, error) {
 		// SIM 卡不写 MSISDN 时（境外/漫游卡常见）回退到手工补录的号码
 		ds.PhoneNumber = dm.displayPhoneNumber(id, status.Mobile.Number)
 		ds.Signal = status.Mobile.SignalLevel
+		ds.Rsrp = normalizeRsrp(status.Mobile.Rsrp)
 		ds.IsRoaming = status.Mobile.IsRoaming
 	}
 
 	return ds, nil
+}
+
+// normalizeRsrp 过滤掉「模组没上报」的占位值。
+//
+// Lua 侧 mobile.rsrp() 取不到时会兜底成 -140，未初始化时是 0，两者都不是真实测量值，
+// 直接透传会让前端把 -140dBm 当成实测电平画出来。有效区间取 3GPP 的 (-140, -44)。
+func normalizeRsrp(rsrp int) int {
+	if rsrp >= -44 || rsrp <= -140 {
+		return 0
+	}
+	return rsrp
 }
 
 // SendSMS 通过指定设备发送短信

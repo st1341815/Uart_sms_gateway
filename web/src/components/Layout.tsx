@@ -128,10 +128,31 @@ export default function Layout() {
 
     const leadDevice = onlineDevices[0];
 
-    // CSQ(0-31) → dBm：3GPP 27.007 经验换算，比直接当 dBm 显示少一个数量级误差
-
-    const leadDbm = leadDevice ? -113 + 2 * (leadDevice.signal ?? 99) : 0;
+    // 顶栏信号电平口径（md 以上才显示，空间紧张，逻辑集中算一次）：
+    // 1. 优先 RSRP —— 4G 下这才是真实信号质量，有效区间 (-140, -44) dBm；
+    // 2. 模组没上报 RSRP 时回退 CSQ 换算 RSSI = -113 + 2×CSQ（3GPP 27.007，2G 口径，只能算估算值）；
+    // 3. CSQ 为 0（无信号）/99（未知）时两者都不可用，返回 null，UI 显示「—」，
+    //    不把无效值当成电平画出来（旧代码在 signal 缺失时按 99 计算，会得出 +85dBm 这种荒谬读数）。
+    const leadRsrp =
+        typeof leadDevice?.rsrp === 'number' && leadDevice.rsrp > -140 && leadDevice.rsrp < -44
+            ? leadDevice.rsrp
+            : null;
+    const leadDbm =
+        leadRsrp ??
+        (leadDevice?.signal && leadDevice.signal > 0 && leadDevice.signal <= 31
+            ? -113 + 2 * leadDevice.signal
+            : null);
     const leadSignal = leadDevice ? signalPercent(leadDevice.signal) : 0;
+    // 一个小灰字行说清三件事：电平来源、原始 CSQ、折算百分比
+    const leadMeta = !leadDevice
+        ? '等待设备'
+        : [
+              leadDbm !== null ? (leadRsrp !== null ? 'dBm RSRP' : 'dBm≈') : null,
+              `CSQ ${leadDevice.signal ?? '—'}/31`,
+              `${leadSignal}%`,
+          ]
+              .filter(Boolean)
+              .join(' · ');
     // 异常 = 离线设备 + 在线但信号 <10/31 的设备
     const abnormalCount = devices.filter(
         (device) => !device.connected || (device.connected && signalPercent(device.signal) < 33),
@@ -337,11 +358,9 @@ export default function Layout() {
                             <div className="hidden items-baseline gap-1.5 border-l border-line pl-4 pr-5 md:flex">
                                 <span className="text-[11px] tracking-[0.08em] text-fg-2">主卡</span>
                                 <span className="num text-xl font-semibold text-fg">
-                                    {leadDevice ? `−${leadDbm}` : '—'}
+                                    {leadDbm !== null ? `−${Math.abs(leadDbm)}` : '—'}
                                 </span>
-                                <span className="num text-xs text-fg-2">
-                                    {leadDevice ? `dBm · CSQ ${leadDevice.signal ?? '—'}/31 · ${leadSignal}%` : '等待设备'}
-                                </span>
+                                <span className="num text-xs text-fg-2">{leadMeta}</span>
                             </div>
 
                             <div className="hidden items-baseline gap-1.5 border-l border-line pl-4 pr-5 xl:flex">

@@ -30,6 +30,7 @@ interface RawDeviceStatus {
     operator?: string;
     phone_number?: string;
     signal?: number;
+    rsrp?: number;
     is_roaming?: boolean;
 }
 
@@ -45,6 +46,7 @@ const normalizeDeviceStatus = (raw: RawDeviceStatus): DeviceStatusSummary => ({
     // 兼容两种命名：后端若改成驼峰也能跑，不会静默变 undefined
     phoneNumber: raw.phone_number ?? (raw as unknown as {phoneNumber?: string}).phoneNumber,
     signal: raw.signal,
+    rsrp: raw.rsrp ?? (raw as unknown as {rsrp?: number}).rsrp,
     isRoaming: raw.is_roaming ?? (raw as unknown as {isRoaming?: boolean}).isRoaming,
 });
 
