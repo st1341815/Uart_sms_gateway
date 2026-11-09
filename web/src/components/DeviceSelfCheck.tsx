@@ -9,6 +9,7 @@ import {
     Info,
     Loader2,
     PackagePlus,
+    Radio,
     RefreshCw,
     ShieldCheck,
     XCircle,
@@ -68,7 +69,46 @@ function ItemRow({item}: {item: SelfCheckItem}) {
     );
 }
 
+// 后端错误体是 {"error": "..."}，直接 toast 出去等于把 JSON 甩到用户脸上
+function apiErrorText(err: unknown): string {
+    const raw = err instanceof Error ? err.message : String(err);
+    try {
+        const parsed = JSON.parse(raw) as {error?: string};
+        if (parsed && typeof parsed.error === 'string') return parsed.error;
+    } catch {
+        // 不是 JSON，原样返回
+    }
+    return raw;
+}
+
 function UnconfiguredModuleCard({module}: {module: SelfCheckModule}) {
+    const [probing, setProbing] = useState(false);
+    const [probeResult, setProbeResult] = useState<selfCheckApi.ProbeResult | null>(null);
+    const [probeError, setProbeError] = useState<string | null>(null);
+
+    // 探测会短暂占用串口，所以只对「容器内可见」的未配置模组开放；
+    // 已配置的端口后端会直接 409，这里连按钮都不给（避免用户误以为能点）。
+    const runProbe = async () => {
+        setProbing(true);
+        setProbeError(null);
+        try {
+            const result = await selfCheckApi.probeModule(module.usb_port);
+            setProbeResult(result);
+            if (result.success) {
+                const tag = [result.operator, result.number].filter(Boolean).join(' ');
+                toast.success(`探测成功：${tag || result.at_port}`);
+            } else {
+                toast.error('没拿到状态帧，卡在哪一步见下面的试探记录');
+            }
+        } catch (err) {
+            const text = apiErrorText(err);
+            setProbeError(text);
+            toast.error(text);
+        } finally {
+            setProbing(false);
+        }
+    };
+
     return (
         <div className="rounded-md border border-warn/30 bg-warn/10 p-3">
             <div className="flex items-start gap-2.5">
@@ -118,7 +158,82 @@ function UnconfiguredModuleCard({module}: {module: SelfCheckModule}) {
                     <Copy className="size-3"/>
                     复制 config Devices
                 </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={probing || !module.in_container}
+                    onClick={runProbe}
+                >
+                    {probing
+                        ? <Loader2 className="size-3 animate-spin"/>
+                        : <Radio className="size-3"/>}
+                    {probing ? '正在探测' : '探测 AT 口'}
+                </Button>
             </div>
+
+            {!module.in_container && (
+                <p className="mt-1.5 text-[11px] leading-5 text-fg-3">
+                    容器内看不到这个模组的节点，探测无法进行：先按上面的片段补 compose devices，重建容器后再探。
+                </p>
+            )}
+
+            {probeError && (
+                <div className="mt-2 rounded-md border border-err/30 bg-err/10 p-2.5 text-[11px] leading-5 text-err">
+                    探测被拒绝：{probeError}
+                </div>
+            )}
+
+            {probeResult && (
+                <div
+                    className={cn(
+                        'mt-2 rounded-md border p-2.5',
+                        probeResult.success ? 'border-ok/30 bg-ok/10' : 'border-warn/30 bg-warn/10',
+                    )}
+                >
+                    <p className={cn('text-[11px] font-medium leading-5', probeResult.success ? 'text-ok' : 'text-warn')}>
+                        {probeResult.message}
+                    </p>
+                    {probeResult.next_step && (
+                        <p className="mt-1 text-[10px] leading-5 text-fg-3">→ {probeResult.next_step}</p>
+                    )}
+
+                    {probeResult.success && (
+                        <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-fg-3">
+                            <span>ICCID <span className="font-mono text-fg-2">{probeResult.iccid || '—'}</span></span>
+                            <span>信号 <span className="font-mono text-fg-2">{probeResult.signal_desc || probeResult.rsrp || '—'}</span></span>
+                            <span>
+                                识别方式{' '}
+                                <span className={probeResult.at_confirmed ? 'text-ok' : 'text-warn'}>
+                                    {probeResult.at_confirmed ? '按 :1.6 规律' : '实测试探'}
+                                </span>
+                            </span>
+                        </p>
+                    )}
+
+                    <div className="mt-1.5 space-y-0.5">
+                        {probeResult.tried.map((attempt) => (
+                            <p key={attempt.by_path} className="font-mono text-[10px] leading-4 text-fg-3">
+                                {attempt.if_key} · {attempt.node} → {attempt.got_status
+                                    ? '命中 status_response'
+                                    : (attempt.error ?? '无响应')}
+                            </p>
+                        ))}
+                    </div>
+
+                    {probeResult.success && probeResult.config_snippet && (
+                        <div className="mt-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => copyText(probeResult.config_snippet ?? '', '探测片段')}
+                            >
+                                <Copy className="size-3"/>
+                                复制探测到的 config 片段
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

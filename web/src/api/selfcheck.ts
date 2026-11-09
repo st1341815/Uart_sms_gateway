@@ -79,3 +79,54 @@ export interface SelfCheckReport {
 export const getSelfCheck = (): Promise<SelfCheckReport> => {
     return apiClient.get<SelfCheckReport>("/serial/selfcheck");
 };
+
+// 单口试探记录（失败时这是唯一能说清「卡到底怎么了」的东西）
+export interface ProbeAttempt {
+    if_key: string;
+    by_path: string;
+    node: string;
+    in_container: boolean;
+    opened: boolean;
+    got_status: boolean;
+    error?: string;
+}
+
+// 探测结果（L1）
+//
+// success=false 是**正常业务结论**（卡没上电/没插好/固件没跑），
+// 接口仍返回 200；只有「端口不存在 / 已配置拒绝 / 冷却 / 并发」才是 4xx。
+export interface ProbeResult {
+    usb_port: string;
+    success: boolean;
+    message: string;
+    next_step?: string;
+    tried: ProbeAttempt[];
+    at_port?: string;
+    node?: string;
+    if_key?: string;
+    at_confirmed: boolean;
+    operator?: string;
+    number?: string;
+    iccid?: string;
+    imsi?: string;
+    sim_ready: boolean;
+    is_registered: boolean;
+    is_roaming: boolean;
+    csq: number;
+    rsrp: number;
+    signal_desc?: string;
+    lua_version?: string;
+    /** 建议的设备显示名（运营商 + 号码） */
+    name?: string;
+    /** 带实测信息的 config.yaml Devices 片段 */
+    config_snippet?: string;
+    probed_at: string;
+}
+
+// 探测某个 USB 端口的 AT 口
+//
+// 会**真的打开串口**发一次 get_status，只允许对未被配置引用的端口调用；
+// 同端口 30 秒冷却、全局串行（一次只探一个）。
+export const probeModule = (usbPort: string): Promise<ProbeResult> => {
+    return apiClient.post<ProbeResult>("/serial/probe", {usb_port: usbPort});
+};

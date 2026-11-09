@@ -33,6 +33,7 @@ type Handlers struct {
 	Serial        *handler.SerialHandler
 	ScheduledTask *handler.ScheduledTaskHandler
 	SelfCheck     *handler.SelfCheckHandler
+	Probe         *handler.ProbeHandler
 }
 
 func Run(configPath string) {
@@ -148,6 +149,12 @@ func setup(app *orz.App) error {
 	selfCheckService := service.NewSelfCheckService(logger)
 	selfCheckHandler := handler.NewSelfCheckHandler(logger, deviceManager, selfCheckService)
 
+	// 模组探测（L1）：真的打开串口发一次 get_status，用来给未配置的新卡定位 AT 口。
+	// 复用 SelfCheckService 的扫描能力（不重复实现 by-path ↔ /dev 的比对），
+	// 但探测路径完全独立，不影响已连接设备的收发。
+	probeService := service.NewProbeService(logger, selfCheckService, deviceManager)
+	probeHandler := handler.NewProbeHandler(logger, probeService)
+
 	handlers := &Handlers{
 		Auth:          authHandler,
 		Credential:    credentialHandler,
@@ -158,6 +165,7 @@ func setup(app *orz.App) error {
 		Serial:        serialHandler,
 		ScheduledTask: scheduledTaskHandler,
 		SelfCheck:     selfCheckHandler,
+		Probe:         probeHandler,
 	}
 
 	// 10. 设置 API 路由
@@ -341,6 +349,10 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 
 	// 设备自检：只读比对「宿主机 by-path ↔ 容器 /dev ↔ config.yaml」，不打开任何串口
 	api.GET("/serial/selfcheck", handlers.SelfCheck.Get)
+
+	// 模组探测：给未配置的模组打开串口发一次 get_status，定位 AT 口
+	// 失败结论走 200 + success=false，只有「拒绝探测/冷却/端口不存在」才用 4xx
+	api.POST("/serial/probe", handlers.Probe.Probe)
 
 	// ScheduledTask API (RESTful)
 	api.GET("/scheduled-tasks", handlers.ScheduledTask.List)

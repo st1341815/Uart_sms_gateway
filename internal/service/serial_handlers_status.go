@@ -38,15 +38,11 @@ func (s *SerialService) handleStatusResponse(msg *ParsedMessage) {
 		s.logger.Error("JSON解析失败", zap.Error(err), zap.String("data", msg.JSON))
 		return
 	}
-	imsi := statusData.Mobile.Imsi
-	if len(imsi) > 5 {
-		plmn := imsi[:5]
-		statusData.Mobile.Operator = func() string {
-			if v, ok := OperData[plmn]; ok {
-				return v
-			}
-			return plmn
-		}()
+	// 运营商由 IMSI 前 5 位（MCC+MNC）推断。
+	// 与 L1 探测（probe_service.go）共用 operatorFromIMSI 一份逻辑，
+	// 否则界面显示「中国移动」、探测结果却显示「46000」，用户会以为是两张卡。
+	if operator := operatorFromIMSI(statusData.Mobile.Imsi); operator != "" {
+		statusData.Mobile.Operator = operator
 	}
 	s.deviceCache.Set(CacheKeyDeviceStatus, &statusData, CacheTTL)
 	s.logger.Debug("设备状态缓存已更新")
