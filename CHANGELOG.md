@@ -21,6 +21,28 @@
 
 ---
 
+## [1.5.0] — 2026-11-09
+
+**加卡之后不再靠人肉 `docker exec` 排查**：新增设备自检（L0 一致性体检），
+只读比对「宿主机 by-path ↔ 容器 /dev ↔ config.yaml」，把「为什么看不到新卡」变成界面上一句结论。
+
+- `feat` 新增 `internal/service/selfcheck_service.go`：扫描 /dev/serial/by-path 与
+  /sys/class/tty，按物理 USB 端口（`usb-<bus>:<port>`）聚合成「模组」——三个 AirM2M
+  模组 VID/PID/SerialNumber 完全相同，by-id 不可用，端口号是唯一能区分的依据。
+  与 `config.yaml` 的 Devices 交叉比对，分出 `ok / not_mapped / missing_on_host /
+  node_only / disabled / auto / invalid` 七种设备状态，外加「未被任何配置引用」的新模组。
+- `feat` 新增 `GET /api/serial/selfcheck`（`internal/handler/selfcheck_handler.go`）：
+  设备名走 `GetDeviceDisplayName`，保证体检结论里的名字和界面上一致。
+- `feat` `SerialControl` 页新增「设备自检」卡片：问题按 error/warn 平铺、正常项可折叠、
+  60 秒自动复检；发现未配置模组时直接给出**可复制的 `docker-compose.yml` devices 片段
+  与 `config.yaml` Devices 片段**，不用手抄 by-path。
+- `feat` 启动时跑一次自检并写日志（只读，不打开串口，不会和在跑的收发抢设备），
+  加卡后重启容器即可在 `docker logs` 里看到结论。
+- `fix` 复制按钮兼容内网 http 环境：非安全上下文下 `navigator.clipboard` 不可用，
+  用 `execCommand` 兜底，否则这个功能在用户真实部署里是死的。
+- `docs` 新增 `docs/新卡自检方案.md`：现状约束（config 只读挂载、容器 devices 创建时固定、
+  /sys 与 /dev/serial 可见宿主机全部节点）、L0/L1/L2 能力分层、L1 的两种宿主机改法与取舍。
+
 ## [1.4.3] — 2026-11-06
 
 **顶栏信号读数不再自相矛盾**：4G 用 RSRP 显示真实电平，CSQ 换算只作兜底，

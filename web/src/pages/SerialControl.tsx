@@ -18,6 +18,7 @@ import {
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
 import {PageHeader} from '@/components/PageHeader';
+import DeviceSelfCheck from '@/components/DeviceSelfCheck';
 import {cn} from '@/lib/utils';
 
 const UNAVAILABLE = '—';
@@ -323,6 +324,9 @@ export default function SerialControl() {
                     )}
                 </CardContent>
             </Card>
+
+            {/* 设备自检：宿主机串口 ↔ 容器 /dev ↔ config.yaml 的一致性体检（只读，不打开串口） */}
+            <DeviceSelfCheck/>
 
             <div className="mt-4 grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
                 <div className="grid gap-4">

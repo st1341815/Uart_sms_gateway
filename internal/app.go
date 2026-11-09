@@ -32,6 +32,7 @@ type Handlers struct {
 	TextMessage   *handler.TextMessageHandler
 	Serial        *handler.SerialHandler
 	ScheduledTask *handler.ScheduledTaskHandler
+	SelfCheck     *handler.SelfCheckHandler
 }
 
 func Run(configPath string) {
@@ -142,6 +143,11 @@ func setup(app *orz.App) error {
 	serialHandler := handler.NewSerialHandler(logger, deviceManager) // 改为传入 deviceManager
 	scheduledTaskHandler := handler.NewScheduledTaskHandler(logger, schedulerService)
 
+	// 设备自检：只读比对「宿主机 by-path ↔ 容器 /dev ↔ config.yaml」，
+	// 用来替代「加卡后必须人肉 docker exec 排查」的流程。
+	selfCheckService := service.NewSelfCheckService(logger)
+	selfCheckHandler := handler.NewSelfCheckHandler(logger, deviceManager, selfCheckService)
+
 	handlers := &Handlers{
 		Auth:          authHandler,
 		Credential:    credentialHandler,
@@ -151,6 +157,7 @@ func setup(app *orz.App) error {
 		TextMessage:   textMessageHandler,
 		Serial:        serialHandler,
 		ScheduledTask: scheduledTaskHandler,
+		SelfCheck:     selfCheckHandler,
 	}
 
 	// 10. 设置 API 路由
@@ -160,6 +167,26 @@ func setup(app *orz.App) error {
 	background := context.Background()
 	// 启动所有设备服务
 	go deviceManager.StartAll()
+
+	// 启动时跑一次设备自检：把「宿主机有卡、config.yaml 没配对」直接写进日志，
+	// 省掉事后人肉 docker exec 排查。
+	// 只做只读扫描（不打开串口），因此不会和在跑的收发改抢设备。
+	go func() {
+		configs := deviceManager.GetAllDeviceConfigs()
+		report := selfCheckService.Run(configs)
+		for _, it := range report.Items {
+			if it.Level == "warn" || it.Level == "error" {
+				logger.Warn("设备自检发现问题",
+					zap.String("code", it.Code),
+					zap.String("message", it.Message),
+					zap.String("next_step", it.NextStep))
+			}
+		}
+		if report.UnconfiguredCount > 0 {
+			logger.Warn("存在未配置的串口模组（宿主机有、config.yaml 里没有）",
+				zap.Int("count", report.UnconfiguredCount))
+		}
+	}()
 
 	// 启动定时任务服务
 	if err := schedulerService.Start(background); err != nil {
@@ -311,6 +338,9 @@ func setupApi(app *orz.App, handlers *Handlers, appConfig *config.AppConfig, log
 	api.GET("/serial/status", handlers.Serial.GetStatus) // 返回所有设备状态或单个（通过 device_id 参数）
 	api.POST("/serial/flymode", handlers.Serial.SetFlymode)
 	api.POST("/serial/reboot", handlers.Serial.RebootMcu)
+
+	// 设备自检：只读比对「宿主机 by-path ↔ 容器 /dev ↔ config.yaml」，不打开任何串口
+	api.GET("/serial/selfcheck", handlers.SelfCheck.Get)
 
 	// ScheduledTask API (RESTful)
 	api.GET("/scheduled-tasks", handlers.ScheduledTask.List)
