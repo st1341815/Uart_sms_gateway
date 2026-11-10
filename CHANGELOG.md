@@ -21,6 +21,26 @@
 
 ---
 
+## [1.6.2] — 2026-11-10
+
+**浅色主题下有字落在自己底色的反面**：消息页头像、自己发的气泡、登录页侧栏，
+前景色都被写死成 `text-white`。深色下 `surface-3` 是 `#10141a`，白字没事；
+切到浅色后同一个 token 变成 `#f4f6f8`，于是「会话列表只剩色块、发出的消息只有气泡没有字」。
+根因不是某个 class 写错，而是**底色 token 与前景色没有成对给**——改主题时只换了底、没换字。
+
+- `fix` `Messages.tsx` 的 `AVATAR_TONES` 改为「底色 + 前景色」成对：
+  `bg-brand text-brand-fg`（深色亮琥珀配深字、浅色压暗琥珀配白字）与
+  `bg-surface-3 text-fg`（深色深底浅字、浅色浅底深字），两处调用点写死的 `text-white` 一并删掉。
+- `fix` `Messages.tsx` 自己消息的气泡 `bg-surface-3 text-white` → `bg-surface-3 text-fg`，
+  并补 `border-line-soft`：浅色下 `surface-3` 与气泡外的 `canvas` 只差几个色阶，没边框分不清气泡边界。
+- `fix` `Login.tsx` 左侧视觉区 `<section>` 去掉 `text-white`（内部元素各自有 `text-fg-2` / `text-fg-3`），
+  标题 `<h1>` 显式补 `text-fg`——它此前完全依赖父级继承，父级一改就跟着变白。
+- `docs` 实测对比度（WCAG，正文 14px 需 4.5:1）：浅色正文 16.76:1、次要文字 5.64:1；
+  深色正文 15.57:1、次要文字 6.16:1，两套主题均过 AA。
+- `docs` 全仓库还剩 2 处 `text-white`，都在有明确底色上（`button.tsx` / `SmsResetPasswordCard.tsx`
+  的 `bg-err` 危险按钮），属预期；其中深色下 `#f85149` 配白字仅 3.35:1，
+  够 18px+ 大字与图形、不够正文小字，若以后要在红底上放小字需另给 `--err-fg`。
+
 ## [1.6.1] — 2026-11-10
 
 **名字改了，通知里还是旧的**：1.6.0 动手做「设备自定义名称」（落 `properties`

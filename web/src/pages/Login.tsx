@@ -62,7 +62,7 @@ export default function Login() {
     return (
         <main className="min-h-screen bg-[#f4f7f9] p-3 sm:p-5 lg:p-6">
             <div className="mx-auto grid min-h-[calc(100vh-24px)] max-w-[1440px] overflow-hidden rounded-[28px] border border-line bg-surface shadow-none sm:min-h-[calc(100vh-40px)] lg:min-h-[calc(100vh-48px)] lg:grid-cols-[1.03fr_0.97fr]">
-                <section className="login-visual relative hidden overflow-hidden bg-surface-3 p-10 text-white lg:flex lg:flex-col xl:p-14">
+                <section className="login-visual relative hidden overflow-hidden bg-surface-3 p-10 lg:flex lg:flex-col xl:p-14">
                     <div className="relative z-10 flex items-center gap-3">
                         <div className="flex size-11 items-center justify-center rounded-md bg-brand-soft ring-1 ring-brand/20">
                             <img src="/logo.png" alt="" className="size-8"/>
@@ -77,7 +77,7 @@ export default function Login() {
                         <span className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand-soft px-3 py-1.5 text-xs font-semibold text-fg-2">
                             <span className="size-1.5 rounded-full bg-brand"/> 多卡并行的设备通信中枢
                         </span>
-                        <h1 className="mt-7 text-5xl font-semibold leading-[1.08] tracking-[-0.045em] xl:text-[58px]">
+                        <h1 className="mt-7 text-5xl font-semibold leading-[1.08] tracking-[-0.045em] text-fg xl:text-[58px]">
                             每一张卡，<br/><span className="text-brand">都在掌控之中。</span>
                         </h1>
                         <p className="mt-6 max-w-lg text-base leading-7 text-fg-3">

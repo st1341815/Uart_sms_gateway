@@ -27,13 +27,19 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/c
 import {cn} from '@/lib/utils';
 import {useMediaQuery} from '@/lib/use-media-query';
 
+/* 头像底色与前景色必须成对给：
+   bg-brand 的背景色在深色下是亮琥珀、浅色下是压暗的深琥珀，
+   对应前景是 brand-fg（深色下深字、浅色下白字）；
+   bg-surface-3 反过来（深色下深底、浅色下浅底），对应前景是 fg。
+   曾经这里只给底色、调用处写死 text-white —— 浅色模式落到 surface-3 的头像
+   就是白底白字，完全读不出号码尾号。 */
 const AVATAR_TONES = [
-    'bg-brand',
-    'bg-surface-3',
-    'bg-brand',
-    'bg-brand',
-    'bg-brand',
-    'bg-surface-3',
+    'bg-brand text-brand-fg',
+    'bg-surface-3 text-fg',
+    'bg-brand text-brand-fg',
+    'bg-brand text-brand-fg',
+    'bg-brand text-brand-fg',
+    'bg-surface-3 text-fg',
 ];
 
 const getAvatarTone = (peer: string) => {
@@ -480,7 +486,7 @@ export default function Messages() {
                                                     )}
                                                 >
                                                     <span className={cn(
-                                                        'flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
+                                                        'flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold',
                                                         getAvatarTone(conv.peer),
                                                     )}>
                                                         {conv.peer.slice(-2)}
@@ -534,7 +540,7 @@ export default function Messages() {
                                         <ChevronLeft className="size-5"/>
                                     </Button>
                                     <span className={cn(
-                                        'flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white',
+                                        'flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold',
                                         getAvatarTone(selectedPeer),
                                     )}>
                                         {selectedPeer.slice(-2)}
@@ -591,7 +597,7 @@ export default function Messages() {
                                                 <div className={cn(
                                                     'relative rounded-md px-4 py-2.5 text-sm leading-relaxed',
                                                     outgoing
-                                                        ? 'rounded-tr-sm bg-surface-3 text-white'
+                                                        ? 'rounded-tr-sm border border-line-soft bg-surface-3 text-fg'
                                                         : 'rounded-tl-sm border border-line bg-surface text-fg-2',
                                                 )}>
                                                     <p className="whitespace-pre-wrap break-words">{msg.content}</p>
