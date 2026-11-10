@@ -199,7 +199,7 @@ func (s *SerialService) expirePendingMessages() {
 				n, int(pendingRetryWindow.Minutes())),
 			Timestamp:  time.Now().Unix(),
 			DeviceID:   s.deviceID,
-			DeviceName: s.deviceConfig.Name,
+			DeviceName: s.displayName(),
 		})
 	}()
 }
@@ -257,7 +257,7 @@ func (s *SerialService) pushOfflineFallbackReport(offlineFor time.Duration) {
 		Content:    fmt.Sprintf("%s\n%s", headline, detail),
 		Timestamp:  time.Now().Unix(),
 		DeviceID:   s.deviceID,
-		DeviceName: s.deviceConfig.Name,
+		DeviceName: s.displayName(),
 	})
 
 	s.logger.Info("已推送 SIM 状态兜底上报",

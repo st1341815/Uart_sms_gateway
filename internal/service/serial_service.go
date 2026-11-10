@@ -42,7 +42,10 @@ type SerialService struct {
 	propertyService            *PropertyService
 	handlers                   map[string]messageHandler
 	scheduledTaskStatusUpdater ScheduledTaskStatusUpdater
-	wg                         sync.WaitGroup
+	// displayNameFn 返回设备的最终显示名（DB 自定义名 > config.yaml 的 Name > 设备 ID）。
+	// 由 DeviceManager 在 Initialize 时注入，见 SetDisplayNameResolver。
+	displayNameFn func() string
+	wg            sync.WaitGroup
 	// 设备信息缓存
 	deviceCache cache.Cache[string, *StatusData]
 	// 连接状态管理
@@ -133,6 +136,29 @@ func NewSerialServiceWithDeviceID(
 
 func (s *SerialService) SetScheduledTaskStatusUpdater(updater ScheduledTaskStatusUpdater) {
 	s.scheduledTaskStatusUpdater = updater
+}
+
+// SetDisplayNameResolver 注入「设备最终显示名」解析器，由 DeviceManager 在
+// Initialize 阶段调用（启动期写入，之后只读，无并发写）。
+func (s *SerialService) SetDisplayNameResolver(fn func() string) {
+	s.displayNameFn = fn
+}
+
+// displayName 返回设备的最终显示名，用于所有对外推送与日志。
+//
+// 为什么不直接用 s.deviceConfig.Name：那是启动时从 config.yaml 读到的一份
+// 快照，而用户在界面上改的名字只落在 properties 表（device_names），
+// config.yaml 在容器里是只读挂载，压根写不回去。v1.6.0 之前所有通知
+// （新短信 / 来电 / SIM 上下线 / 补发失败回执）都取 deviceConfig.Name，
+// 于是改完名 webhook 里收到的仍然是「移动新卡」这种开机默认名。
+func (s *SerialService) displayName() string {
+	if s.displayNameFn != nil {
+		return s.displayNameFn()
+	}
+	if s.deviceConfig.Name != "" {
+		return s.deviceConfig.Name
+	}
+	return s.deviceID
 }
 
 // GetDeviceID 获取设备ID

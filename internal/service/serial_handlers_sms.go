@@ -43,7 +43,7 @@ func (s *SerialService) handleIncomingSMS(msg *ParsedMessage) {
 
 	s.logger.Info("收到新短信",
 		zap.String("device_id", s.deviceID),
-		zap.String("device_name", s.deviceConfig.Name),
+		zap.String("device_name", s.displayName()),
 		zap.String("from", sms.From),
 		zap.String("content", sms.Content),
 		zap.Int64("timestamp", sms.Timestamp))
@@ -89,7 +89,7 @@ func (s *SerialService) sendNotification(ctx context.Context, sms IncomingSMS) {
 		Content:    sms.Content,
 		Timestamp:  sms.Timestamp,
 		DeviceID:   s.deviceID,
-		DeviceName: s.deviceConfig.Name,
+		DeviceName: s.displayName(),
 	}
 
 	s.sendNotificationMessage(ctx, msg)
@@ -179,7 +179,7 @@ func (s *SerialService) handleSMSSendResult(msg *ParsedMessage) {
 				Content:    fmt.Sprintf("短信发送失败: %s", to),
 				Timestamp:  time.Now().Unix(),
 				DeviceID:   s.deviceID,
-				DeviceName: s.deviceConfig.Name,
+				DeviceName: s.displayName(),
 			})
 		}()
 	}

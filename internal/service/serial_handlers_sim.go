@@ -105,7 +105,7 @@ func (s *SerialService) notifySimStatus(online bool, st *StatusData) {
 		Content:    detail,
 		Timestamp:  now.Unix(),
 		DeviceID:   s.deviceID,
-		DeviceName: s.deviceConfig.Name,
+		DeviceName: s.displayName(),
 	})
 
 	s.logger.Info("SIM 状态变化，已推送通知",

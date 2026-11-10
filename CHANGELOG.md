@@ -21,6 +21,27 @@
 
 ---
 
+## [1.6.1] — 2026-11-10
+
+**名字改了，通知里还是旧的**：1.6.0 动手做「设备自定义名称」（落 `properties`
+表的覆盖层）时，界面、设备选择器、状态卡片都走了新名字，唯独推送没跟上——
+新短信、来电、SIM 上下线、补发失败回执里给出去的 `{{device_name}}` 仍是
+`config.yaml` 里的开机默认名。因为容器内该文件是只读挂载，界面改名根本写不回去，
+于是「我明明改了名，webhook 里还是『移动新卡』」。
+
+- `fix` `SerialService` 新增 `displayName()`，统一按
+  **DB 自定义名 > config 的 Name > 设备 ID** 三级回退取值。
+- `fix` 5 处推送 + 2 处日志全部改用 `displayName()`：
+  `serial_handlers_sms.go`（新短信 / 转发失败）、`serial_handlers_call.go`（来电）、
+  `serial_handlers_sim.go`（SIM 上下线）、`serial_pending.go`（补发与补发失败）。
+- `fix` `DeviceManager.Initialize` 给每台设备注入名称解析器
+  （`SetDisplayNameResolver`），改名立即生效、无需重启；注入时特意走
+  `dm.displayName`（只碰 `nameMu`）而不是 `GetDeviceDisplayName`（要 `RLock dm.mu`，
+  而此时正持写锁）。
+- `test` 新增 `internal/service/device_display_name_test.go`：覆盖三级优先级、
+  改名后 `displayName()` 立刻跟随、config 快照不被篡改，并用源码扫描做护栏，
+  防止以后再把 `s.deviceConfig.Name` 写回推送点。
+
 ## [1.6.0] — 2026-11-09
 
 **新卡自检答了「宿主机上多了一张卡」，这一版接着答「这张卡是哪张」**：新增 L1 模组探测——

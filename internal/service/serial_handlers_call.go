@@ -24,7 +24,7 @@ func (s *SerialService) handleIncomingCall(msg *ParsedMessage) {
 
 	s.logger.Info("收到来电",
 		zap.String("device_id", s.deviceID),
-		zap.String("device_name", s.deviceConfig.Name),
+		zap.String("device_name", s.displayName()),
 		zap.String("from", call.From),
 		zap.Int64("timestamp", call.Timestamp))
 
@@ -35,7 +35,7 @@ func (s *SerialService) handleIncomingCall(msg *ParsedMessage) {
 		Content:    "", // 来电无内容
 		Timestamp:  call.Timestamp,
 		DeviceID:   s.deviceID,
-		DeviceName: s.deviceConfig.Name,
+		DeviceName: s.displayName(),
 	}
 
 	go s.sendNotificationMessage(context.Background(), notifMsg)

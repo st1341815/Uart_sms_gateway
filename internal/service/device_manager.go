@@ -183,6 +183,16 @@ func (dm *DeviceManager) Initialize() error {
 			ss.SetScheduledTaskStatusUpdater(dm.scheduledTaskStatusUpdater)
 		}
 
+		// 注入显示名解析：SerialService 手里那份 DeviceConfig 是启动时从
+		// config.yaml 读的死快照，而界面改名只写 properties 表。不注入的话
+		// 所有推送会一直用开机默认名（v1.6.0 的 bug）。
+		// 这里刻意调 dm.displayName（只碰 nameMu）而不是 GetDeviceDisplayName
+		// （要 RLock dm.mu，而本人正持写锁在跑）。
+		deviceID, configName := dc.ID, dc.Name
+		ss.SetDisplayNameResolver(func() string {
+			return dm.displayName(deviceID, configName)
+		})
+
 		dm.devices[dc.ID] = ss
 		dm.order = append(dm.order, dc.ID)
 		dm.logger.Info("设备服务已初始化",
