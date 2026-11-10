@@ -56,6 +56,7 @@
   --ok: #3fb950;
   --warn: #e3b341;
   --err: #f85149;
+  --err-fg: #12151a;
   --info: #6cb6ff;
 
   --bar-idle: #2b323b;
@@ -88,6 +89,7 @@
   --ok: #1a7f37;
   --warn: #8a5a00;
   --err: #c0281c;
+  --err-fg: #ffffff;
   --info: #0b63a8;
 
   --bar-idle: #d8dfe6;
@@ -115,6 +117,7 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-err: var(--err);
+  --color-err-fg: var(--err-fg);
   --color-info: var(--info);
 
   /* ── shadcn 兼容层：radix 组件（dialog/select/switch…）靠这些变量 ── */

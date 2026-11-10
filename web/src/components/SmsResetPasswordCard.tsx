@@ -190,7 +190,7 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
                             取消
                         </Button>
                         <Button
-                            className="bg-err text-white hover:bg-err"
+                            className="bg-err text-err-fg hover:bg-err/90"
                             disabled={mutation.isPending}
                             onClick={() =>
                                 mutation.mutate({
@@ -200,7 +200,7 @@ export function SmsResetPasswordCard({onResetSuccess}: SmsResetPasswordCardProps
                             }
                         >
                             {mutation.isPending && (
-                                <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"/>
+                                <span className="size-4 animate-spin rounded-full border-2 border-err-fg/40 border-t-err-fg"/>
                             )}
                             {mutation.isPending ? '发送中...' : '确认重置'}
                         </Button>
